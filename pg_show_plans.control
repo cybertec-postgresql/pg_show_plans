@@ -1,0 +1,5 @@
+# pg_show_plans extension
+comment = 'show query plans of all currently running SQL statements'
+default_version = '1.0'
+module_pathname = '$libdir/pg_show_plans'
+relocatable = true

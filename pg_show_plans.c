@@ -27,20 +27,29 @@
 #include "utils/builtins.h"
 #include "commands/explain.h"
 
+#define NESTED_LEVEL /* Support nested_level */
+
 PG_MODULE_MAGIC;
 
 /*
  * Define constants
  */
 #define PLAN_SIZE             3000 /* Max length of query plan string */
+#ifdef NESTED_LEVEL
+#define PG_SHOW_PLANS_COLS		 5
+#define MAX_NESTED_LEVEL         5 /* temporal value */
+#else
 #define PG_SHOW_PLANS_COLS		 4
-
+#endif
 /*
  * Define data types
  */
 typedef struct pgspHashKey
 {
 	pid_t       pid;
+#ifdef NESTED_LEVEL
+	int         nested_level;
+#endif
 } pgspHashKey;
 
 typedef struct pgspEntry
@@ -84,12 +93,18 @@ static HTAB *pgsp_hash = NULL;
  */
 typedef enum
 {
+#ifdef NESTED_LEVEL
+	PGSP_SHOW_LEVEL_ALL,			/* all level statement's query plans */
+#endif
 	PGSP_SHOW_LEVEL_TOP,			/* only top level statement's query plans */
 	PGSP_SHOW_LEVEL_NONE			/* show no plans */
 }	PGSPShowLevel;
 
 static const struct config_enum_entry show_options[] =
 {
+#ifdef NESTED_LEVEL
+	{"all", PGSP_SHOW_LEVEL_ALL, false},
+#endif
 	{"top", PGSP_SHOW_LEVEL_TOP, false},
 	{"none", PGSP_SHOW_LEVEL_NONE, false},
 	{NULL, 0, false}
@@ -113,8 +128,14 @@ static int	pgsp_show_level;	/* show level */
 
 static int  plan_format;
 
+#ifdef NESTED_LEVEL
+#define pgsp_enabled() \
+	(pgsp_show_level == PGSP_SHOW_LEVEL_ALL || \
+	(pgsp_show_level == PGSP_SHOW_LEVEL_TOP && nested_level == 0))
+#else
 #define pgsp_enabled() \
 	(pgsp_show_level == PGSP_SHOW_LEVEL_TOP && nested_level == 0)
+#endif
 
 /*
  * Function declarations
@@ -146,9 +167,18 @@ static void pgsp_ExecutorFinish(QueryDesc *queryDesc);
 static void pgsp_ExecutorEnd(QueryDesc *queryDesc);
 
 static pgspEntry *entry_alloc(pgspHashKey *key, const char *query, int plan_len);
+#ifdef NESTED_LEVEL
+static void entry_store(char *plan, const int nested_level);
+static void entry_delete(const uint32 pid, const int nested_level);
+static void entry_delete_all_by_pid(const uint32 pid);
+static uint32 gen_hashkey(const void *key, Size keysize);
+static int compare_hashkey(const void *key1, const void *key2, Size keysize);
+#else
 static void entry_store(char *plan);
-static void entry_delete_all(void);
 static void entry_delete(const uint32 pid);
+#endif
+static void entry_delete_all(void);
+
 
 
 /*
@@ -254,10 +284,23 @@ pgsp_shmem_startup(void)
 	memset(&info, 0, sizeof(info));
 	info.keysize = sizeof(pgspHashKey);
 	info.entrysize = sizeof(pgspEntry);
+
+#ifdef NESTED_LEVEL
+	info.hash = gen_hashkey;
+	info.match = compare_hashkey;
+#endif
 	pgsp_hash = ShmemInitHash("pg_show_plans hash",
+#ifdef NESTED_LEVEL
+							  pgsp_max*MAX_NESTED_LEVEL, pgsp_max*MAX_NESTED_LEVEL,
+#else
 							  pgsp_max, pgsp_max,
+#endif
 							  &info,
+#ifdef NESTED_LEVEL
+							  HASH_ELEM | HASH_FUNCTION | HASH_COMPARE);
+#else
 							  HASH_ELEM);
+#endif
 
 	LWLockRelease(AddinShmemInitLock);
 
@@ -328,7 +371,11 @@ pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags)
 			}
 		}
 
+#ifdef NESTED_LEVEL
+		entry_store(es->str->data, nested_level);
+#else
 		entry_store(es->str->data);
+#endif
 
 		pfree(es->str->data);
 	}
@@ -403,7 +450,11 @@ pgsp_ExecutorEnd(QueryDesc *queryDesc)
 {
 	/* Delete entry. */
 	if (pgsp_enabled())
+#ifdef NESTED_LEVEL
+		entry_delete(getpid(), nested_level);
+#else
 		entry_delete(getpid());
+#endif
 
 	if (prev_ExecutorEnd)
 		prev_ExecutorEnd(queryDesc);
@@ -415,7 +466,11 @@ pgsp_ExecutorEnd(QueryDesc *queryDesc)
  * Store a plan to the hashtable.
  */
 static void
+#ifdef NESTED_LEVEL
+entry_store(char *plan, const int nested_level)
+#else
 entry_store(char *plan)
+#endif
 {
 	pgspHashKey key;
 	pgspEntry  *entry;
@@ -431,6 +486,9 @@ entry_store(char *plan)
 		return;
 
 	key.pid = getpid();
+#ifdef NESTED_LEVEL
+	key.nested_level = nested_level;
+#endif
 	plan_len = strlen(plan);
 	Assert(plan_len >= 0 && plan_len < PLAN_SIZE);
 	
@@ -482,6 +540,32 @@ pgsp_memsize(void)
 
 	return size;
 }
+
+#ifdef NESTED_LEVEL
+static uint32
+gen_hashkey(const void *key, Size keysize)
+{
+	const pgspHashKey *k = (const pgspHashKey *) key;
+
+	/* The maximum pid number is 2^23 in Linux, 
+	 * so we make a unique value shown below as a hash key.
+	 */
+	return (uint32)(k->pid + (k->nested_level * (2>>24)));
+}
+
+static int
+compare_hashkey(const void *key1, const void *key2, Size keysize)
+{
+	const pgspHashKey *k1 = (const pgspHashKey *) key1;
+	const pgspHashKey *k2 = (const pgspHashKey *) key2;
+
+	if (k1->pid == k2->pid &&
+		k1->nested_level == k2->nested_level)
+		return 0;
+	else
+		return 1;
+}
+#endif
 
 /*
  * Allocate a new hashtable entry.
@@ -538,7 +622,11 @@ entry_delete_all(void)
  * Delete the entry
  */
 static void
+#ifdef NESTED_LEVEL
+entry_delete(const uint32 pid, const int nested_level)
+#else
 entry_delete(const uint32 pid)
+#endif
 {
 	pgspHashKey key;
 
@@ -547,10 +635,39 @@ entry_delete(const uint32 pid)
 		return;
 
 	LWLockAcquire(pgsp->lock, LW_EXCLUSIVE);
+
+#ifdef NESTED_LEVEL
 	key.pid = pid;
+	key.nested_level = nested_level;
+#else
+	key.pid = pid;
+#endif
 	hash_search(pgsp_hash, &key, HASH_REMOVE, NULL);
+
 	LWLockRelease(pgsp->lock);
 }
+
+#ifdef NESTED_LEVEL
+static void
+entry_delete_all_by_pid(const uint32 pid)
+{
+	HASH_SEQ_STATUS hash_seq;
+	pgspEntry  *entry;
+
+	/* Safety check... */
+	if (!pgsp || !pgsp_hash)
+		return;
+
+	LWLockAcquire(pgsp->lock, LW_EXCLUSIVE);
+	hash_seq_init(&hash_seq, pgsp_hash);
+	while ((entry = hash_seq_search(&hash_seq)) != NULL)
+	{
+		if (entry->key.pid == pid)
+			hash_search(pgsp_hash, &entry->key, HASH_REMOVE, NULL);
+	}
+	LWLockRelease(pgsp->lock);
+}
+#endif
 
 /*
  * Delete all plans.
@@ -579,7 +696,11 @@ pg_show_plans_delete(PG_FUNCTION_ARGS)
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 				 errmsg("pg_show_plans must be loaded via shared_preload_libraries")));
 
+#ifdef NESTED_LEVEL
+	entry_delete_all_by_pid(pid);
+#else
 	entry_delete(pid);
+#endif
 	PG_RETURN_VOID();
 }
 
@@ -655,6 +776,9 @@ pg_show_plans(PG_FUNCTION_ARGS)
 		memset(nulls, 0, sizeof(nulls));
 
 		values[i++] = ObjectIdGetDatum(entry->key.pid);
+#ifdef NESTED_LEVEL
+		values[i++] = ObjectIdGetDatum(entry->key.nested_level);
+#endif
 		values[i++] = ObjectIdGetDatum(entry->userid);
 		values[i++] = ObjectIdGetDatum(entry->dbid);
 
@@ -677,6 +801,7 @@ pg_show_plans(PG_FUNCTION_ARGS)
 		}
 
 		tuplestore_putvalues(tupstore, tupdesc, values, nulls);
+
 	}
 
 	LWLockRelease(pgsp->lock);

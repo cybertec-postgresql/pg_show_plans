@@ -9,19 +9,19 @@ This module supports PostgreSQL 12 beta 2 or earlier.
 
 ## Version
 
-*Version 0.1.*
+*Version 0.2.*
 
 This module is a developing version yet.
 After implementing all features described in the TODO section, where is at the end of this document, version 1.0 will be released.
 
 ## Installation
 
-Assume that the package of this module is `pg_show_plans-0.1.tar.gz`,
+Assume that the package of this module is `pg_show_plans-0.2.tar.gz`,
 you can install it to do the usual way shown below.
 
 ```
 $ cd contrib
-$ tar xvfz pg_show_plans-0.1.tar.gz
+$ tar xvfz pg_show_plans-0.2.tar.gz
 $ cd pg_show_plans
 $ make && make install
 ```
@@ -44,10 +44,10 @@ By issuing the following query, it shows the query plan and related information 
 
 ```
 testdb=# SELECT * FROM pg_show_plans;
-  pid  | userid | dbid  |                                 plan
--------+--------+-------+-----------------------------------------------------------------------
- 19861 |     10 | 16384 | Function Scan on pg_show_plans  (cost=0.00..10.00 rows=1000 width=48)
- 19966 |     10 | 16384 | Result  (cost=0.00..0.01 rows=1 width=4)
+  pid  | level | userid | dbid  |                                 plan                                  
+-------+-------+--------+-------+-----------------------------------------------------------------------
+ 31600 |     0 |     10 | 16384 | Function Scan on pg_show_plans  (cost=0.00..10.00 rows=1000 width=56)
+ 31602 |     0 |     10 | 16384 | Result  (cost=0.00..0.01 rows=1 width=4)
 (2 rows)
 ```
 
@@ -59,7 +59,7 @@ Expanded display is on.
 
 testdb=# SELECT p.pid, p.plan, a.query FROM pg_show_plans p, pg_stat_activity a WHERE p.pid = a.pid;
 -[ RECORD 1 ]--------------------------------------------------------------------------------------
-pid   | 19861
+pid   | 31600
 plan  | Hash Join  (cost=2.25..21.00 rows=500 width=72)                                            +
       |   Hash Cond: (pg_show_plans.pid = s.pid)                                                   +
       |   ->  Function Scan on pg_show_plans  (cost=0.00..10.00 rows=1000 width=40)                +
@@ -67,14 +67,15 @@ plan  | Hash Join  (cost=2.25..21.00 rows=500 width=72)                         
       |         ->  Function Scan on pg_stat_get_activity s  (cost=0.00..1.00 rows=100 width=44)
 query | SELECT p.pid, p.plan, a.query FROM pg_show_plans p, pg_stat_activity a WHERE p.pid = a.pid;
 -[ RECORD 2 ]--------------------------------------------------------------------------------------
-pid   | 19966
+pid   | 31605
 plan  | Result  (cost=0.00..0.01 rows=1 width=4)
 query | SELECT pg_sleep(10);
 ```
 
 ## pg_show_plans View
  - *pid*: the pid of the process which the query is running.    
- - *userid*: the userid of the user which run the query.
+ - *level*: the level of the query which runs the query. Top level is `0`.
+ - *userid*: the userid of the user which runs the query.
  - *dbid*: the database id of the database which the query is running.
  - *plan*: the query plan of the running query.
 
@@ -84,7 +85,7 @@ query | SELECT pg_sleep(10);
 
 ## Configuration Parameters
 
- - *pg_show_plans.show_level* : pg_show_plans.show_level controls the level of query plans. Currently, you can select either `top` or `none`. "top" shows the top level of the query plan; "none" does not store the query plans, so the pg_show_plans view does not show anything.  Default is `top`.
+ - *pg_show_plans.show_level* : pg_show_plans.show_level controls the level of query plans. You can select one of `all`,`top` and `none`. "all" shows all level of the query plan. For example, when you execute a function defined by PL/pgSQL, the caller SQL statement (level 0) and the internal SQL statements in the function (level 1) are shown. "top" shows the top level of the query plan. "none" does not store the query plans, so the pg_show_plans view does not show anything. Default is `top`.
 
  - *pg_show_plans.format* : pg_show_plans.format controls the output format of query plans. It can be selected either `json` or `text`. Default is`json`.
 
@@ -94,13 +95,13 @@ query | SELECT pg_sleep(10);
 ### 1. Support long query plan string.
 The current version can only store the query plan string whose length is less than 3000 byte and this maximum length is embedded.
 
-### 2. Support nested query.
-The current version cannot show the nested query plans, such  as the internal SQL statements of the PL/pgSQL functions.
-
-### 3. Support Garbage collection.
+### 2. Support Garbage collection.
 If a query is canceled or a process which a query is running crashes, the corresponding stored information is *not* deleted from the hashtable, so the plan is always shown even though the corresponding SQL statement has not been running.
 
 ## Change Log
 
+ - 9 Aug, 2019: Version 0.2 Released. Supported nested queries.
+
  - 8 Aug, 2019: Version 0.1 Released.
+
 

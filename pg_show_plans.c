@@ -61,7 +61,7 @@ typedef struct pgspEntry
 	int			encoding;		/* query encoding */
 	int			plan_len;		/* # of valid bytes in query string */
 	slock_t		mutex;			/* protects the counters only */
-	char		plan[0];        /* query plan string */
+	char		plan[PLAN_SIZE];/* query plan string */
 } pgspEntry;
 
 /* Global shared state */
@@ -538,7 +538,11 @@ pgsp_memsize(void)
 	Size		size;
 
 	size = MAXALIGN(sizeof(pgspSharedState));
+#ifdef NESTED_LEVEL
+	size = add_size(size, hash_estimate_size(pgsp_max*MAX_NESTED_LEVEL, sizeof(pgspEntry)));
+#else
 	size = add_size(size, hash_estimate_size(pgsp_max, sizeof(pgspEntry)));
+#endif
 
 	return size;
 }

@@ -8,6 +8,8 @@
  *
  *-------------------------------------------------------------------------
  */
+#define NESTED_LEVEL /* Support nested_level */
+
 #include "postgres.h"
 
 #include <unistd.h>
@@ -27,20 +29,19 @@
 #include "utils/builtins.h"
 #include "commands/explain.h"
 
-#define NESTED_LEVEL /* Support nested_level */
-
 PG_MODULE_MAGIC;
 
 /*
  * Define constants
  */
-#define PLAN_SIZE             3000 /* Max length of query plan string */
+#define PLAN_SIZE             3 * 1024 /* Max length of query plan string */
 #ifdef NESTED_LEVEL
 #define PG_SHOW_PLANS_COLS		 5
 #define MAX_NESTED_LEVEL         5 /* temporal value */
 #else
 #define PG_SHOW_PLANS_COLS		 4
 #endif
+
 /*
  * Define data types
  */
@@ -60,12 +61,10 @@ typedef struct pgspEntry
 	int			encoding;		/* query encoding */
 	int			plan_len;		/* # of valid bytes in query string */
 	slock_t		mutex;			/* protects the counters only */
-	char		plan[PLAN_SIZE];/* query plan */
+	char		plan[0];        /* query plan string */
 } pgspEntry;
 
-/*
- * Global shared state
- */
+/* Global shared state */
 typedef struct pgspSharedState
 {
 	LWLock	*lock;			/* protects hashtable search/modification */
@@ -123,11 +122,16 @@ static const struct config_enum_entry plan_formats[] =
 	{NULL, 0, false}
 };
 
-static int	pgsp_max;			/* max # plans to show */
+/*
+ * static variables
+ */
+static int	pgsp_max;			/* max plans to show */
 static int	pgsp_show_level;	/* show level */
+static int  plan_format;        /* output format */
 
-static int  plan_format;
-
+/*
+ * macro
+ */
 #ifdef NESTED_LEVEL
 #define pgsp_enabled() \
 	(pgsp_show_level == PGSP_SHOW_LEVEL_ALL || \
@@ -179,8 +183,6 @@ static void entry_delete(const uint32 pid);
 #endif
 static void entry_delete_all(void);
 
-
-
 /*
  * Module callback
  */
@@ -203,12 +205,12 @@ _PG_init(void)
 							 NULL);
 
 	DefineCustomEnumVariable("pg_show_plans.plan_format",
-							 "Selects which format to be appied for plan representation in pg_show_plans.",
+							 "Set the output format of query plans.",
 							 NULL,
 							 &plan_format,
 							 PLAN_FORMAT_JSON,
 							 plan_formats,
-							 PGC_USERSET,
+							 PGC_SUSET,
 							 0,
 							 NULL,
 							 NULL,
@@ -350,7 +352,7 @@ pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags)
 		if (es->str->len >= PLAN_SIZE)
 		{
 			/* 
-			 * Note: If the length of the query plan is longer than PLAN_SIZE, 
+			 * Note: If the length of the query plan is longer than PLAN_SIZE,
 			 * the message below is shown instead of the plan string.
 			 */
 			char *msg = "<too long query plan string>";
@@ -448,7 +450,7 @@ pgsp_ExecutorFinish(QueryDesc *queryDesc)
 static void
 pgsp_ExecutorEnd(QueryDesc *queryDesc)
 {
-	/* Delete entry. */
+	/* Delete entry */
 	if (pgsp_enabled())
 #ifdef NESTED_LEVEL
 		entry_delete(getpid(), nested_level);
@@ -542,6 +544,9 @@ pgsp_memsize(void)
 }
 
 #ifdef NESTED_LEVEL
+/*
+ * Generate a unique value from hashkey for the hashtable.
+ */
 static uint32
 gen_hashkey(const void *key, Size keysize)
 {
@@ -553,6 +558,9 @@ gen_hashkey(const void *key, Size keysize)
 	return (uint32)(k->pid + (k->nested_level * (2>>24)));
 }
 
+/*
+ * Compare hashkeys
+ */
 static int
 compare_hashkey(const void *key1, const void *key2, Size keysize)
 {
@@ -619,7 +627,7 @@ entry_delete_all(void)
 }
 
 /*
- * Delete the entry
+ * Delete all stored plans.
  */
 static void
 #ifdef NESTED_LEVEL
@@ -648,6 +656,9 @@ entry_delete(const uint32 pid)
 }
 
 #ifdef NESTED_LEVEL
+/*
+ * Delete all stored plans related to pid.
+ */
 static void
 entry_delete_all_by_pid(const uint32 pid)
 {
@@ -670,7 +681,7 @@ entry_delete_all_by_pid(const uint32 pid)
 #endif
 
 /*
- * Delete all plans.
+ * Delete all stored plans.
  */
 Datum
 pg_show_plans_delete_all(PG_FUNCTION_ARGS)
@@ -684,7 +695,7 @@ pg_show_plans_delete_all(PG_FUNCTION_ARGS)
 }
 
 /*
- * Delete the specified plan.
+ * Delete the specified plan by pid.
  */
 Datum
 pg_show_plans_delete(PG_FUNCTION_ARGS)
@@ -704,9 +715,8 @@ pg_show_plans_delete(PG_FUNCTION_ARGS)
 	PG_RETURN_VOID();
 }
 
-
 /*
- * Retrieve statement statistics.
+ * Retrieve stored plans.
  */
 Datum
 pg_show_plans(PG_FUNCTION_ARGS)

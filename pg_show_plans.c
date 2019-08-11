@@ -16,6 +16,8 @@
 #include <dlfcn.h>
 
 #include "access/hash.h"
+#include "access/transam.h"
+#include "access/xact.h"
 #include "catalog/pg_authid.h"
 #include "funcapi.h"
 #include "mb/pg_wchar.h"
@@ -61,6 +63,7 @@ typedef struct pgspEntry
 	int			encoding;		/* query encoding */
 	int			plan_len;		/* # of valid bytes in query string */
 	slock_t		mutex;			/* protects the counters only */
+	TransactionId topxid;       /* Top level transaction id of this query */
 	char		plan[PLAN_SIZE];/* query plan string */
 } pgspEntry;
 
@@ -182,6 +185,7 @@ static void entry_store(char *plan);
 static void entry_delete(const uint32 pid);
 #endif
 static void entry_delete_all(void);
+static void entry_gc(void);
 
 /*
  * Module callback
@@ -515,6 +519,7 @@ entry_store(char *plan)
 	e->userid = GetUserId();
 	e->dbid = MyDatabaseId;
 	e->encoding = GetDatabaseEncoding();
+	e->topxid = GetTopTransactionId();
 
 	memcpy(entry->plan, plan, plan_len);
 	entry->plan_len = plan_len;
@@ -685,6 +690,30 @@ entry_delete_all_by_pid(const uint32 pid)
 #endif
 
 /*
+ * Delete stored plans which the corresponding SQL statements have 
+ * been already committed or aborted.
+ *
+ * These orphan plans occur when the corresponding SQL statement is
+ * canceled or the executed process is broken.
+ */
+static void
+entry_gc(void)
+{
+	HASH_SEQ_STATUS hash_seq;
+	pgspEntry  *entry;
+
+	LWLockAcquire(pgsp->lock, LW_EXCLUSIVE);
+	hash_seq_init(&hash_seq, pgsp_hash);
+	while ((entry = hash_seq_search(&hash_seq)) != NULL)
+	{
+		if (TransactionIdDidCommit(entry->topxid) 
+			|| TransactionIdDidAbort(entry->topxid))
+			hash_search(pgsp_hash, &entry->key, HASH_REMOVE, NULL);
+	}
+	LWLockRelease(pgsp->lock);
+}
+
+/*
  * Delete all stored plans.
  */
 Datum
@@ -773,6 +802,12 @@ pg_show_plans(PG_FUNCTION_ARGS)
 	rsinfo->setDesc = tupdesc;
 
 	MemoryContextSwitchTo(oldcontext);
+
+	/* 
+	 * Whenever pg_show_plans() is executed, we delete unnecessary entries
+	 * that remain in the hash table.
+	 */
+	entry_gc();
 
 	/*
 	 * Get shared lock, and iterate over the hashtable entries.

@@ -9,19 +9,19 @@ This module supports PostgreSQL 12 beta 2 or earlier.
 
 ## Version
 
-*Version 0.2.*
+*Version 0.3.*
 
 This module is a developing version yet.
 After implementing all features described in the TODO section, where is at the end of this document, version 1.0 will be released.
 
 ## Installation
 
-Assume that the package of this module is `pg_show_plans-0.2.tar.gz`,
+Assume that the package of this module is `pg_show_plans-0.3.tar.gz`,
 you can install it to do the usual way shown below.
 
 ```
 $ cd contrib
-$ tar xvfz pg_show_plans-0.2.tar.gz
+$ tar xvfz pg_show_plans-0.3.tar.gz
 $ cd pg_show_plans
 $ make && make install
 ```
@@ -93,12 +93,13 @@ query | SELECT pg_sleep(10);
 ## TODO
 
 ### 1. Support long query plan string.
-The current version can only store the query plan string whose length is less than 3000 byte and this maximum length is embedded.
+The current version can only store the query plan string whose length is less than 3kb and this maximum length is embedded.
 
-### 2. Support Garbage collection.
-If a query is canceled or a process which a query is running crashes, the corresponding stored information is *not* deleted from the hashtable, so the plan is always shown even though the corresponding SQL statement has not been running.
+### 2. Support parallel query.
 
 ## Change Log
+
+ - 12 Aug, 2019: Version 0.3 Released. Supported garbage collection.
 
  - 9 Aug, 2019: Version 0.2 Released. Supported nested queries.
 

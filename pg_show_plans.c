@@ -185,7 +185,6 @@ static void entry_store(char *plan);
 static void entry_delete(const uint32 pid);
 #endif
 static void entry_delete_all(void);
-static void entry_gc(void);
 
 /*
  * Module callback
@@ -295,9 +294,10 @@ pgsp_shmem_startup(void)
 	info.hash = gen_hashkey;
 	info.match = compare_hashkey;
 #endif
+
 	pgsp_hash = ShmemInitHash("pg_show_plans hash",
 #ifdef NESTED_LEVEL
-							  pgsp_max*MAX_NESTED_LEVEL, pgsp_max*MAX_NESTED_LEVEL,
+							  pgsp_max, pgsp_max*MAX_NESTED_LEVEL,
 #else
 							  pgsp_max, pgsp_max,
 #endif
@@ -496,8 +496,9 @@ entry_store(char *plan)
 	key.nested_level = nested_level;
 #endif
 	plan_len = strlen(plan);
+
 	Assert(plan_len >= 0 && plan_len < PLAN_SIZE);
-	
+
 	/* Look up the hash table entry with shared lock. */
 	LWLockAcquire(pgsp->lock, LW_SHARED);
 
@@ -509,7 +510,12 @@ entry_store(char *plan)
 		LWLockRelease(pgsp->lock);
 
 		LWLockAcquire(pgsp->lock, LW_EXCLUSIVE);
-		entry = entry_alloc(&key, "", 0);
+		if ((entry = entry_alloc(&key, "", 0)) == NULL)
+		{
+			/* New entry was not created since hashtable is full. */
+			LWLockRelease(pgsp->lock);
+			return;
+		}
 	}
 
 	/* Grab the spinlock while updating the entry */
@@ -561,10 +567,11 @@ gen_hashkey(const void *key, Size keysize)
 {
 	const pgspHashKey *k = (const pgspHashKey *) key;
 
-	/* The maximum pid number is 2^23 in Linux, 
+	/* 
+	 * The maximum pid number is 2^23 in Linux, 
 	 * so we make a unique value shown below as a hash key.
 	 */
-	return (uint32)(k->pid + (k->nested_level * (2>>24)));
+	return (uint32)(k->pid + (k->nested_level * (0x1<<24)));
 }
 
 /*
@@ -597,7 +604,8 @@ entry_alloc(pgspHashKey *key, const char *plan, int plan_len)
 	bool		found;
 
 	/* Find or create an entry with desired hash code */
-	entry = (pgspEntry *) hash_search(pgsp_hash, key, HASH_ENTER, &found);
+	if ((entry = (pgspEntry *) hash_search(pgsp_hash, key, HASH_ENTER_NULL, &found)) == NULL)
+		return entry;
 
 	if (!found)
 	{
@@ -636,7 +644,7 @@ entry_delete_all(void)
 }
 
 /*
- * Delete all stored plans.
+ * Delete all stored plans related to pid.
  */
 static void
 #ifdef NESTED_LEVEL
@@ -653,11 +661,9 @@ entry_delete(const uint32 pid)
 
 	LWLockAcquire(pgsp->lock, LW_EXCLUSIVE);
 
+	key.pid = pid;
 #ifdef NESTED_LEVEL
-	key.pid = pid;
 	key.nested_level = nested_level;
-#else
-	key.pid = pid;
 #endif
 	hash_search(pgsp_hash, &key, HASH_REMOVE, NULL);
 
@@ -688,30 +694,6 @@ entry_delete_all_by_pid(const uint32 pid)
 	LWLockRelease(pgsp->lock);
 }
 #endif
-
-/*
- * Delete stored plans which the corresponding SQL statements have 
- * been already committed or aborted.
- *
- * These orphan plans occur when the corresponding SQL statement is
- * canceled or the executed process is broken.
- */
-static void
-entry_gc(void)
-{
-	HASH_SEQ_STATUS hash_seq;
-	pgspEntry  *entry;
-
-	LWLockAcquire(pgsp->lock, LW_EXCLUSIVE);
-	hash_seq_init(&hash_seq, pgsp_hash);
-	while ((entry = hash_seq_search(&hash_seq)) != NULL)
-	{
-		if (TransactionIdDidCommit(entry->topxid) 
-			|| TransactionIdDidAbort(entry->topxid))
-			hash_search(pgsp_hash, &entry->key, HASH_REMOVE, NULL);
-	}
-	LWLockRelease(pgsp->lock);
-}
 
 /*
  * Delete all stored plans.
@@ -803,15 +785,7 @@ pg_show_plans(PG_FUNCTION_ARGS)
 
 	MemoryContextSwitchTo(oldcontext);
 
-	/* 
-	 * Whenever pg_show_plans() is executed, we delete unnecessary entries
-	 * that remain in the hash table.
-	 */
-	entry_gc();
-
-	/*
-	 * Get shared lock, and iterate over the hashtable entries.
-	 */
+	/* Get shared lock, and iterate over the hashtable entries */
 	LWLockAcquire(pgsp->lock, LW_SHARED);
 
 	hash_seq_init(&hash_seq, pgsp_hash);
@@ -820,6 +794,27 @@ pg_show_plans(PG_FUNCTION_ARGS)
 		Datum		values[PG_SHOW_PLANS_COLS];
 		bool		nulls[PG_SHOW_PLANS_COLS];
 		int			i = 0;
+
+		/* 
+		 * Delete stored plans which the corresponding SQL statements have 
+		 * been already committed or aborted.
+		 *
+		 * These orphan plans occur when the corresponding SQL statement is
+		 * canceled or the executed process crashes.
+		 */
+		if (TransactionIdDidCommit(entry->topxid) 
+			|| TransactionIdDidAbort(entry->topxid))
+		{
+			LWLockRelease(pgsp->lock);
+			
+			LWLockAcquire(pgsp->lock, LW_EXCLUSIVE);
+			hash_search(pgsp_hash, &entry->key, HASH_REMOVE, NULL);
+			LWLockRelease(pgsp->lock);
+			
+			LWLockAcquire(pgsp->lock, LW_SHARED);
+
+			continue;
+		}
 
 		memset(values, 0, sizeof(values));
 		memset(nulls, 0, sizeof(nulls));
@@ -850,7 +845,6 @@ pg_show_plans(PG_FUNCTION_ARGS)
 		}
 
 		tuplestore_putvalues(tupstore, tupdesc, values, nulls);
-
 	}
 
 	LWLockRelease(pgsp->lock);

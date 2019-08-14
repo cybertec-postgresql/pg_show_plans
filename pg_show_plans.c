@@ -151,12 +151,8 @@ void		_PG_init(void);
 void		_PG_fini(void);
 
 Datum		pg_show_plans(PG_FUNCTION_ARGS);
-Datum		pg_show_plans_delete_all(PG_FUNCTION_ARGS);
-Datum		pg_show_plans_delete(PG_FUNCTION_ARGS);
 
 PG_FUNCTION_INFO_V1(pg_show_plans);
-PG_FUNCTION_INFO_V1(pg_show_plans_delete_all);
-PG_FUNCTION_INFO_V1(pg_show_plans_delete);
 
 static Size pgsp_memsize(void);
 static void pgsp_shmem_startup(void);
@@ -177,14 +173,12 @@ static pgspEntry *entry_alloc(pgspHashKey *key, const char *query, int plan_len)
 #ifdef NESTED_LEVEL
 static void entry_store(char *plan, const int nested_level);
 static void entry_delete(const uint32 pid, const int nested_level);
-static void entry_delete_all_by_pid(const uint32 pid);
 static uint32 gen_hashkey(const void *key, Size keysize);
 static int compare_hashkey(const void *key1, const void *key2, Size keysize);
 #else
 static void entry_store(char *plan);
 static void entry_delete(const uint32 pid);
 #endif
-static void entry_delete_all(void);
 
 /*
  * Module callback
@@ -622,28 +616,6 @@ entry_alloc(pgspHashKey *key, const char *plan, int plan_len)
 }
 
 /*
- * Delete all entries.
- */
-static void
-entry_delete_all(void)
-{
-	HASH_SEQ_STATUS hash_seq;
-	pgspEntry  *entry;
-
-	/* Safety check... */
-	if (!pgsp || !pgsp_hash)
-		return;
-
-	LWLockAcquire(pgsp->lock, LW_EXCLUSIVE);
-	hash_seq_init(&hash_seq, pgsp_hash);
-	while ((entry = hash_seq_search(&hash_seq)) != NULL)
-	{
-		hash_search(pgsp_hash, &entry->key, HASH_REMOVE, NULL);
-	}
-	LWLockRelease(pgsp->lock);
-}
-
-/*
  * Delete all stored plans related to pid.
  */
 static void
@@ -668,66 +640,6 @@ entry_delete(const uint32 pid)
 	hash_search(pgsp_hash, &key, HASH_REMOVE, NULL);
 
 	LWLockRelease(pgsp->lock);
-}
-
-#ifdef NESTED_LEVEL
-/*
- * Delete all stored plans related to pid.
- */
-static void
-entry_delete_all_by_pid(const uint32 pid)
-{
-	HASH_SEQ_STATUS hash_seq;
-	pgspEntry  *entry;
-
-	/* Safety check... */
-	if (!pgsp || !pgsp_hash)
-		return;
-
-	LWLockAcquire(pgsp->lock, LW_EXCLUSIVE);
-	hash_seq_init(&hash_seq, pgsp_hash);
-	while ((entry = hash_seq_search(&hash_seq)) != NULL)
-	{
-		if (entry->key.pid == pid)
-			hash_search(pgsp_hash, &entry->key, HASH_REMOVE, NULL);
-	}
-	LWLockRelease(pgsp->lock);
-}
-#endif
-
-/*
- * Delete all stored plans.
- */
-Datum
-pg_show_plans_delete_all(PG_FUNCTION_ARGS)
-{
-	if (!pgsp || !pgsp_hash)
-		ereport(ERROR,
-				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("pg_show_plans must be loaded via shared_preload_libraries")));
-	entry_delete_all();
-	PG_RETURN_VOID();
-}
-
-/*
- * Delete the specified plan by pid.
- */
-Datum
-pg_show_plans_delete(PG_FUNCTION_ARGS)
-{
-	uint32 pid = PG_GETARG_UINT32(0);
-
-	if (!pgsp || !pgsp_hash)
-		ereport(ERROR,
-				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("pg_show_plans must be loaded via shared_preload_libraries")));
-
-#ifdef NESTED_LEVEL
-	entry_delete_all_by_pid(pid);
-#else
-	entry_delete(pid);
-#endif
-	PG_RETURN_VOID();
 }
 
 /*

@@ -79,10 +79,6 @@ query | SELECT pg_sleep(10);
  - *dbid*: the database id of the database which the query is running.
  - *plan*: the query plan of the running query.
 
-## Functions
- - *pg_show_plans_delete_all()* : Delete all stored plans in the hashtable.
- - *pg_show_plans_delete(pid)* : Delete the stored plan related to the specified pid.
-
 ## Configuration Parameters
 
  - *pg_show_plans.show_level* : pg_show_plans.show_level controls the level of query plans. You can select one of `all`,`top` and `none`. "all" shows all level of the query plan. For example, when you execute a function defined by PL/pgSQL, the caller SQL statement (level 0) and the internal SQL statements in the function (level 1) are shown. "top" shows the top level of the query plan. "none" does not store the query plans, so the pg_show_plans view does not show anything. Default is `top`.

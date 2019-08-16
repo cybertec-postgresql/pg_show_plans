@@ -36,7 +36,6 @@ PG_MODULE_MAGIC;
 /*
  * Define constants
  */
-#define PLAN_SIZE             3 * 1024 /* Max length of query plan string */
 #ifdef NESTED_LEVEL
 #define PG_SHOW_PLANS_COLS		 5
 #define MAX_NESTED_LEVEL         4 /* temporal value */
@@ -64,7 +63,7 @@ typedef struct pgspEntry
 	int			plan_len;		/* # of valid bytes in query string */
 	slock_t		mutex;			/* protects the entry */
 	TransactionId topxid;       /* Top level transaction id of this query */
-	char		plan[PLAN_SIZE];/* query plan string */
+	char		plan[0];        /* query plan string */
 } pgspEntry;
 
 /* Global shared state */
@@ -133,6 +132,7 @@ static const struct config_enum_entry plan_formats[] =
 static int	pgsp_max;			/* max plans to show */
 static int	pgsp_show_level;	/* show level */
 static int  plan_format;        /* output format */
+static int max_plan_length;     /* max length of query plan */
 
 /*
  * macro
@@ -195,6 +195,19 @@ _PG_init(void)
 {
 	if (!process_shared_preload_libraries_in_progress)
 		return;
+
+	DefineCustomIntVariable("pg_show_plans.max_plan_length",
+							"Set the maximum plan length.",
+							NULL,
+							&max_plan_length,
+							3 * 1024,
+							1024,
+							100 * 1024,
+							PGC_SUSET,
+							0,
+							NULL,
+							NULL,
+							NULL);
 
 	DefineCustomEnumVariable("pg_show_plans.show_level",
 							 "Selects which plans are shown by pg_show_plans.",
@@ -298,7 +311,7 @@ pgsp_shmem_startup(void)
 	/* Be sure everyone agrees on the hash table entry size */
 	memset(&info, 0, sizeof(info));
 	info.keysize = sizeof(pgspHashKey);
-	info.entrysize = sizeof(pgspEntry);
+	info.entrysize = offsetof(pgspEntry, plan) + max_plan_length;
 
 #ifdef NESTED_LEVEL
 	info.hash = gen_hashkey;
@@ -373,13 +386,12 @@ pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags)
 		ExplainPrintPlan(es, queryDesc);
 		ExplainEndOutput(es);
 
-		if (es->str->len >= PLAN_SIZE)
+		if (es->str->len >= max_plan_length)
 		{
 			/* 
-			 * Note: If the length of the query plan is longer than PLAN_SIZE,
+			 * Note: If the length of the query plan is longer than max_plan_length,
 			 * the message below is shown instead of the plan string.
 			 */
-
 			char *msg = "<too long query plan string>";
 			memcpy(es->str->data, msg, strlen(msg));
 			es->str->len = strlen(msg);
@@ -526,7 +538,7 @@ entry_store(char *plan)
 #endif
 	plan_len = strlen(plan);
 
-	Assert(plan_len >= 0 && plan_len < PLAN_SIZE);
+	Assert(plan_len >= 0 && plan_len < max_plan_length);
 
 	/* Look up the hash table entry with shared lock. */
 	LWLockAcquire(pgsp->lock, LW_SHARED);
@@ -644,7 +656,7 @@ entry_alloc(pgspHashKey *key, const char *plan, int plan_len)
 		/* New entry, initialize it */
 		SpinLockInit(&entry->mutex);
 
-		Assert(plan_len >= 0 && plan_len < PLAN_SIZE);
+		Assert(plan_len >= 0 && plan_len < max_plan_length);
 		entry->plan_len = plan_len;
 		memcpy(entry->plan, plan, plan_len);
 		entry->plan[plan_len] = '\0';

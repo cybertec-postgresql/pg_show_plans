@@ -85,13 +85,14 @@ query | SELECT pg_sleep(10);
 
  - *pg_show_plans.format* : pg_show_plans.format controls the output format of query plans. It can be selected either `json` or `text`. Default is`json`.
 
+## Functions
+ - *pg_show_plans_disable()* : pg_show_plans_disable disables the feature. Only superuser can execute it.
+ - *pg_show_plans_enable()* : pg_show_plans_enable enables the feature. Only superuser can execute it.
 
 ## TODO
 
 ### 1. Support long query plan string.
 The current version can only store the query plan string whose length is less than 3kb and this maximum length is embedded.
-
-### 2. Support parallel query.
 
 ## Change Log
 

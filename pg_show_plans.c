@@ -39,7 +39,7 @@ PG_MODULE_MAGIC;
 #define PLAN_SIZE             3 * 1024 /* Max length of query plan string */
 #ifdef NESTED_LEVEL
 #define PG_SHOW_PLANS_COLS		 5
-#define MAX_NESTED_LEVEL         5 /* temporal value */
+#define MAX_NESTED_LEVEL         4 /* temporal value */
 #else
 #define PG_SHOW_PLANS_COLS		 4
 #endif
@@ -62,7 +62,7 @@ typedef struct pgspEntry
 	Oid			dbid;			/* database OID */
 	int			encoding;		/* query encoding */
 	int			plan_len;		/* # of valid bytes in query string */
-	slock_t		mutex;			/* protects the counters only */
+	slock_t		mutex;			/* protects the entry */
 	TransactionId topxid;       /* Top level transaction id of this query */
 	char		plan[PLAN_SIZE];/* query plan string */
 } pgspEntry;
@@ -71,6 +71,8 @@ typedef struct pgspEntry
 typedef struct pgspSharedState
 {
 	LWLock	*lock;			/* protects hashtable search/modification */
+	bool is_enable;         /* Whether to enable the feature or not */
+	slock_t elock;			/* protects the variable `is_enable` */
 } pgspSharedState;
 
 /*
@@ -151,8 +153,12 @@ void		_PG_init(void);
 void		_PG_fini(void);
 
 Datum		pg_show_plans(PG_FUNCTION_ARGS);
+Datum		pg_show_plans_enable(PG_FUNCTION_ARGS);
+Datum		pg_show_plans_disable(PG_FUNCTION_ARGS);
 
 PG_FUNCTION_INFO_V1(pg_show_plans);
+PG_FUNCTION_INFO_V1(pg_show_plans_enable);
+PG_FUNCTION_INFO_V1(pg_show_plans_disable);
 
 static Size pgsp_memsize(void);
 static void pgsp_shmem_startup(void);
@@ -179,6 +185,7 @@ static int compare_hashkey(const void *key1, const void *key2, Size keysize);
 static void entry_store(char *plan);
 static void entry_delete(const uint32 pid);
 #endif
+static void set_state(bool state);
 
 /*
  * Module callback
@@ -272,12 +279,21 @@ pgsp_shmem_startup(void)
 	pgsp = ShmemInitStruct("pg_show_plans", sizeof(pgspSharedState), &found);
 
 	if (!found)
+	{
 		/* First time through ... */
 #if PG_VERSION_NUM >= 90600
 		pgsp->lock = &(GetNamedLWLockTranche("pg_show_plans"))->lock;
 #else
 		pgsp->lock = LWLockAssign();
 #endif
+		SpinLockInit(&pgsp->elock);
+	}
+
+	/* Set the initial value to is_enable */
+	if (pgsp_show_level == PGSP_SHOW_LEVEL_NONE)
+		pgsp->is_enable = false;
+	else
+		pgsp->is_enable = true;
 
 	/* Be sure everyone agrees on the hash table entry size */
 	memset(&info, 0, sizeof(info));
@@ -329,6 +345,16 @@ pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags)
 	/*
 	 * Execute EXPLAIN and Store the query plan into the hashtable
 	 */
+
+	/* Skip subsequent processing if is_enable is false */
+	SpinLockAcquire(&pgsp->elock);
+	if (!pgsp->is_enable)
+	{
+		SpinLockRelease(&pgsp->elock);
+		return;
+	}
+	SpinLockRelease(&pgsp->elock);
+
 	if (pgsp_enabled())
 	{
 		ExplainState *es     = NewExplainState();
@@ -353,6 +379,7 @@ pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags)
 			 * Note: If the length of the query plan is longer than PLAN_SIZE,
 			 * the message below is shown instead of the plan string.
 			 */
+
 			char *msg = "<too long query plan string>";
 			memcpy(es->str->data, msg, strlen(msg));
 			es->str->len = strlen(msg);
@@ -449,12 +476,20 @@ static void
 pgsp_ExecutorEnd(QueryDesc *queryDesc)
 {
 	/* Delete entry */
-	if (pgsp_enabled())
+	SpinLockAcquire(&pgsp->elock);
+	if (pgsp->is_enable)
+	{
+		SpinLockRelease(&pgsp->elock);
+		if (pgsp_enabled())
 #ifdef NESTED_LEVEL
-		entry_delete(getpid(), nested_level);
+			entry_delete(getpid(), nested_level);
 #else
-		entry_delete(getpid());
+			entry_delete(getpid());
 #endif
+	} 
+	else
+		SpinLockRelease(&pgsp->elock);
+
 
 	if (prev_ExecutorEnd)
 		prev_ExecutorEnd(queryDesc);
@@ -597,7 +632,10 @@ entry_alloc(pgspHashKey *key, const char *plan, int plan_len)
 	pgspEntry  *entry;
 	bool		found;
 
-	/* Find or create an entry with desired hash code */
+	/*
+	 * Find or create an entry with desired hash code.
+	 * If hashtable is full, return NULL.
+	 */
 	if ((entry = (pgspEntry *) hash_search(pgsp_hash, key, HASH_ENTER_NULL, &found)) == NULL)
 		return entry;
 
@@ -631,15 +669,53 @@ entry_delete(const uint32 pid)
 	if (!pgsp || !pgsp_hash)
 		return;
 
-	LWLockAcquire(pgsp->lock, LW_EXCLUSIVE);
-
 	key.pid = pid;
 #ifdef NESTED_LEVEL
 	key.nested_level = nested_level;
 #endif
+	LWLockAcquire(pgsp->lock, LW_EXCLUSIVE);
 	hash_search(pgsp_hash, &key, HASH_REMOVE, NULL);
-
 	LWLockRelease(pgsp->lock);
+}
+
+/*
+ * Set state to is_enable
+ */
+static void
+set_state(bool state)
+{
+	bool		is_allowed_role = false;
+
+    /* Superusers or members of pg_read_all_stats members are allowed */
+#if PG_VERSION_NUM >= 100000
+    is_allowed_role = is_member_of_role(GetUserId(), DEFAULT_ROLE_READ_ALL_STATS);
+#else
+    is_allowed_role = superuser();
+#endif
+
+	if (is_allowed_role)
+	{
+		SpinLockAcquire(&pgsp->elock);
+		pgsp->is_enable = state;
+		SpinLockRelease(&pgsp->elock);
+	}
+}
+
+/*
+ * Change the state of this extension: enable or disable
+ */
+Datum
+pg_show_plans_enable(PG_FUNCTION_ARGS)
+{
+	set_state(true);
+	PG_RETURN_VOID();
+}
+
+Datum
+pg_show_plans_disable(PG_FUNCTION_ARGS)
+{
+	set_state(false);
+	PG_RETURN_VOID();
 }
 
 /*
@@ -697,6 +773,15 @@ pg_show_plans(PG_FUNCTION_ARGS)
 
 	MemoryContextSwitchTo(oldcontext);
 
+	/* Skip hashtable retrieving */
+	SpinLockAcquire(&pgsp->elock);
+	if (!pgsp->is_enable)
+	{
+		SpinLockRelease(&pgsp->elock);
+		return (Datum) 0;
+	}
+	SpinLockRelease(&pgsp->elock);
+
 	/* Get shared lock, and iterate over the hashtable entries */
 	LWLockAcquire(pgsp->lock, LW_SHARED);
 
@@ -728,6 +813,7 @@ pg_show_plans(PG_FUNCTION_ARGS)
 			continue;
 		}
 
+		/* Set values */
 		memset(values, 0, sizeof(values));
 		memset(nulls, 0, sizeof(nulls));
 
@@ -743,10 +829,11 @@ pg_show_plans(PG_FUNCTION_ARGS)
 			char *pstr = entry->plan;
 
 			values[i++] 
-				= CStringGetTextDatum((char *)pg_do_encoding_conversion((unsigned char *) pstr,
-																		entry->plan_len,
-																		entry->encoding,
-																		GetDatabaseEncoding()));
+				= CStringGetTextDatum((char *)pg_do_encoding_conversion(
+										  (unsigned char *) pstr,
+										  entry->plan_len,
+										  entry->encoding,
+										  GetDatabaseEncoding()));
 			
 			if (pstr != entry->plan)
 				pfree(pstr);

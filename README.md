@@ -15,7 +15,7 @@ The hashtable size cannot be changed, so the plans are not stored if the hashtab
 
 *Version 0.8 = Alpha version*
 
-This module is still a developing version, so the features have not fixed yet.
+This module is still a developing version, so the features have not been frozen yet.
 
 After implementing all features described in the TODO section, where is at the end of this document, version 1.0 will be released.
 

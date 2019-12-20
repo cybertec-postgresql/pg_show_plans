@@ -1,11 +1,10 @@
 # pg_show_plans
 
 `pg_show_plans` is a module which shows the query plans of all currently running SQL statements.
-This is implemented based on [pg_stat_statements](https://www.postgresql.org/docs/current/pgstatstatements.html).
 
-You can select the output format of plans: JSON or TEXT.
+You can select the output format of plans: TEXT or JSON.
 
-This module supports PostgreSQL 12 beta 2 or earlier.
+This module supports PostgreSQL versions from 9.1 to 12.
 
 ### Note
 When the server starts, pg_show_plans makes a hashtable  on the shared-memory in order to temporarily store query plans.
@@ -13,11 +12,7 @@ The hashtable size cannot be changed, so the plans are not stored if the hashtab
 
 ## Version
 
-*Version 0.8 = Alpha version*
-
-This module is still a developing version, so the features have not been frozen yet.
-
-After implementing all features described in the TODO section, where is at the end of this document, version 1.0 will be released.
+*Version 1.0 RC*
 
 ## Installation
 
@@ -103,20 +98,17 @@ query |
 ## Configuration Parameters
  - *pg_show_plans.show_level* : It controls the level of query plans. You can select one of `all`,`top` and `none`. "all" shows all level of the query plan. For example, when you execute a function defined by PL/pgSQL, the caller SQL statement (level 0) and the internal SQL statements in the function (level 1) are shown. "top" shows the top level of the query plan. "none" does not store the query plans, so the pg_show_plans view does not show anything. Default is `top`.
 
- - *pg_show_plans.format* : It controls the output format of query plans. It can be selected either `json` or `text`. Default is`json`.
+ - *pg_show_plans.plan_format* : It controls the output format of query plans. It can be selected either `json` or `text`. Default is `text`.
 
- - *pg_show_plans.max_plan_length* : It sets the maximum length of query plans. Default is `3kb`.
+ - *pg_show_plans.max_plan_length* : It sets the maximum length of query plans. Default is `8192` [byte]. Note that this parameter must be set to an integer.
 
 ## Functions
  - *pg_show_plans_disable()* disables the feature. Only superuser can execute it.
  - *pg_show_plans_enable()* enables the feature. Only superuser can execute it.
 
-## TODO
-
-1. Improve nested_level display style.
-2. Alpha testing.
-
 ## Change Log
+
+ - 21 Dec, 2019: Version 1.0 RC Released. Supported versions from 9.1 to 9.4.
 
  - 16 Aug, 2019: Version 0.8 Released. Supported the parameter:max_plan_length.
 

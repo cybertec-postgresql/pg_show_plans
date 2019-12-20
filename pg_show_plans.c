@@ -8,7 +8,7 @@
  *
  *-------------------------------------------------------------------------
  */
-#define NESTED_LEVEL /* Support nested_level */
+#define NESTED_LEVEL			/* Support nested_level */
 
 #include "postgres.h"
 
@@ -38,7 +38,7 @@ PG_MODULE_MAGIC;
  */
 #ifdef NESTED_LEVEL
 #define PG_SHOW_PLANS_COLS		 5
-#define MAX_NESTED_LEVEL         4 /* temporal value */
+#define MAX_NESTED_LEVEL         4	/* temporal value */
 #else
 #define PG_SHOW_PLANS_COLS		 4
 #endif
@@ -48,31 +48,35 @@ PG_MODULE_MAGIC;
  */
 typedef struct pgspHashKey
 {
-	pid_t       pid;
+	pid_t		pid;
 #ifdef NESTED_LEVEL
-	int         nested_level;
+	int			nested_level;
 #endif
-} pgspHashKey;
+}			pgspHashKey;
 
 typedef struct pgspEntry
 {
-	pgspHashKey	key;			/* hash key of entry - MUST BE FIRST */
+	pgspHashKey key;			/* hash key of entry - MUST BE FIRST */
 	Oid			userid;			/* user OID */
 	Oid			dbid;			/* database OID */
 	int			encoding;		/* query encoding */
 	int			plan_len;		/* # of valid bytes in query string */
 	slock_t		mutex;			/* protects the entry */
-	TransactionId topxid;       /* Top level transaction id of this query */
-	char		plan[0];        /* query plan string */
-} pgspEntry;
+	TransactionId topxid;		/* Top level transaction id of this query */
+	char		plan[0];		/* query plan string */
+}			pgspEntry;
 
 /* Global shared state */
 typedef struct pgspSharedState
 {
-	LWLock	*lock;			/* protects hashtable search/modification */
-	bool is_enable;         /* Whether to enable the feature or not */
-	slock_t elock;			/* protects the variable `is_enable` */
-} pgspSharedState;
+#if PG_VERSION_NUM >= 90400
+	LWLock	   *lock;			/* protects hashtable search/modification */
+#else
+	LWLockId	lock;			/* protects hashtable search/modification */
+#endif
+	bool		is_enable;		/* Whether to enable the feature or not */
+	slock_t		elock;			/* protects the variable `is_enable` */
+}			pgspSharedState;
 
 /*
  * Local variables
@@ -88,7 +92,7 @@ static ExecutorFinish_hook_type prev_ExecutorFinish = NULL;
 static ExecutorEnd_hook_type prev_ExecutorEnd = NULL;
 
 /* Links to shared memory state */
-static pgspSharedState *pgsp = NULL;
+static pgspSharedState * pgsp = NULL;
 static HTAB *pgsp_hash = NULL;
 
 /*
@@ -97,11 +101,11 @@ static HTAB *pgsp_hash = NULL;
 typedef enum
 {
 #ifdef NESTED_LEVEL
-	PGSP_SHOW_LEVEL_ALL,			/* all level statement's query plans */
+	PGSP_SHOW_LEVEL_ALL,		/* all level statement's query plans */
 #endif
-	PGSP_SHOW_LEVEL_TOP,			/* only top level statement's query plans */
-	PGSP_SHOW_LEVEL_NONE			/* show no plans */
-}	PGSPShowLevel;
+	PGSP_SHOW_LEVEL_TOP,		/* only top level statement's query plans */
+	PGSP_SHOW_LEVEL_NONE		/* show no plans */
+}			PGSPShowLevel;
 
 static const struct config_enum_entry show_options[] =
 {
@@ -117,7 +121,7 @@ typedef enum
 {
 	PLAN_FORMAT_JSON,
 	PLAN_FORMAT_TEXT
-}	PGSPPlanFormats;
+}			PGSPPlanFormats;
 
 static const struct config_enum_entry plan_formats[] =
 {
@@ -131,8 +135,8 @@ static const struct config_enum_entry plan_formats[] =
  */
 static int	pgsp_max;			/* max plans to show */
 static int	pgsp_show_level;	/* show level */
-static int  plan_format;        /* output format */
-static int max_plan_length;     /* max length of query plan */
+static int	plan_format;		/* output format */
+static int	max_plan_length;	/* max length of query plan */
 
 /*
  * macro
@@ -175,12 +179,12 @@ static void pgsp_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction,
 static void pgsp_ExecutorFinish(QueryDesc *queryDesc);
 static void pgsp_ExecutorEnd(QueryDesc *queryDesc);
 
-static pgspEntry *entry_alloc(pgspHashKey *key, const char *query, int plan_len);
+static pgspEntry * entry_alloc(pgspHashKey * key, const char *query, int plan_len);
 #ifdef NESTED_LEVEL
 static void entry_store(char *plan, const int nested_level);
 static void entry_delete(const uint32 pid, const int nested_level);
 static uint32 gen_hashkey(const void *key, Size keysize);
-static int compare_hashkey(const void *key1, const void *key2, Size keysize);
+static int	compare_hashkey(const void *key1, const void *key2, Size keysize);
 #else
 static void entry_store(char *plan);
 static void entry_delete(const uint32 pid);
@@ -200,7 +204,7 @@ _PG_init(void)
 							"Set the maximum plan length.",
 							NULL,
 							&max_plan_length,
-							3 * 1024,
+							8 * 1024,
 							1024,
 							100 * 1024,
 							PGC_SUSET,
@@ -225,7 +229,7 @@ _PG_init(void)
 							 "Set the output format of query plans.",
 							 NULL,
 							 &plan_format,
-							 PLAN_FORMAT_JSON,
+							 PLAN_FORMAT_TEXT,
 							 plan_formats,
 							 PGC_SUSET,
 							 0,
@@ -320,7 +324,7 @@ pgsp_shmem_startup(void)
 
 	pgsp_hash = ShmemInitHash("pg_show_plans hash",
 #ifdef NESTED_LEVEL
-							  pgsp_max, pgsp_max*MAX_NESTED_LEVEL,
+							  pgsp_max, pgsp_max * MAX_NESTED_LEVEL,
 #else
 							  pgsp_max, pgsp_max,
 #endif
@@ -368,10 +372,12 @@ pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags)
 	}
 	SpinLockRelease(&pgsp->elock);
 
+#if PG_VERSION_NUM >= 90500
 	if (pgsp_enabled())
 	{
-		ExplainState *es     = NewExplainState();
-	    switch (plan_format)
+		ExplainState *es = NewExplainState();
+
+		switch (plan_format)
 		{
 			case PLAN_FORMAT_TEXT:
 				es->format = EXPLAIN_FORMAT_TEXT;
@@ -379,7 +385,7 @@ pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags)
 			case PLAN_FORMAT_JSON:
 			default:
 				es->format = EXPLAIN_FORMAT_JSON;
-				break;		
+				break;
 		};
 
 		ExplainBeginOutput(es);
@@ -388,16 +394,19 @@ pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags)
 
 		if (es->str->len >= max_plan_length)
 		{
-			/* 
-			 * Note: If the length of the query plan is longer than max_plan_length,
-			 * the message below is shown instead of the plan string.
+			/*
+			 * Note: If the length of the query plan is longer than
+			 * max_plan_length, the message below is shown instead of the plan
+			 * string.
 			 */
-			char *msg = "<too long query plan string>";
+			char	   *msg = "<too long query plan string>";
+
 			memcpy(es->str->data, msg, strlen(msg));
 			es->str->len = strlen(msg);
 			es->str->data[es->str->len] = '\0';
 		}
-		else {
+		else
+		{
 			if (plan_format == PLAN_FORMAT_JSON)
 			{
 				es->str->data[0] = '{';
@@ -417,6 +426,66 @@ pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags)
 #endif
 
 		pfree(es->str->data);
+
+#else
+
+	if (pgsp_enabled())
+	{
+		ExplainState es;
+
+		ExplainInitState(&es);
+
+		switch (plan_format)
+		{
+			case PLAN_FORMAT_TEXT:
+				es.format = EXPLAIN_FORMAT_TEXT;
+				break;
+			case PLAN_FORMAT_JSON:
+			default:
+				es.format = EXPLAIN_FORMAT_JSON;
+				break;
+		};
+
+		ExplainBeginOutput(&es);
+		ExplainPrintPlan(&es, queryDesc);
+		ExplainEndOutput(&es);
+
+		if (es.str->len >= max_plan_length)
+		{
+			/*
+			 * Note: If the length of the query plan is longer than
+			 * max_plan_length, the message below is shown instead of the plan
+			 * string.
+			 */
+			char	   *msg = "<too long query plan string>";
+
+			memcpy(es.str->data, msg, strlen(msg));
+			es.str->len = strlen(msg);
+			es.str->data[es.str->len] = '\0';
+		}
+		else
+		{
+			if (plan_format == PLAN_FORMAT_JSON)
+			{
+				es.str->data[0] = '{';
+				es.str->data[es.str->len - 1] = '}';
+			}
+			else if (plan_format == PLAN_FORMAT_TEXT)
+			{
+				es.str->len--;
+				es.str->data[es.str->len] = '\0';
+			}
+		}
+
+#ifdef NESTED_LEVEL
+		entry_store(es.str->data, nested_level);
+#else
+		entry_store(es.str->data);
+#endif
+
+		pfree(es.str->data);
+
+#endif
 	}
 }
 
@@ -424,13 +493,13 @@ pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags)
  * ExecutorRun hook: all we need do is show nesting depth
  */
 static void
-pgsp_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction,
+			pgsp_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction,
 #if PG_VERSION_NUM >= 100000
-				 uint64 count, bool execute_once)
+							 uint64 count, bool execute_once)
 #elif PG_VERSION_NUM >= 90600
-				 uint64 count)
+							 uint64 count)
 #else
-				 long count)
+							 long count)
 #endif
 {
 	nested_level++;
@@ -498,7 +567,7 @@ pgsp_ExecutorEnd(QueryDesc *queryDesc)
 #else
 			entry_delete(getpid());
 #endif
-	} 
+	}
 	else
 		SpinLockRelease(&pgsp->elock);
 
@@ -522,9 +591,9 @@ entry_store(char *plan)
 	pgspHashKey key;
 	pgspEntry  *entry;
 	char	   *norm_query = NULL;
-	int 		plan_len;
+	int			plan_len;
 
-	pgspEntry *e;
+	pgspEntry  *e;
 
 	Assert(plan != NULL);
 
@@ -591,7 +660,7 @@ pgsp_memsize(void)
 
 	size = MAXALIGN(sizeof(pgspSharedState));
 #ifdef NESTED_LEVEL
-	size = add_size(size, hash_estimate_size(pgsp_max*MAX_NESTED_LEVEL, sizeof(pgspEntry)));
+	size = add_size(size, hash_estimate_size(pgsp_max * MAX_NESTED_LEVEL, sizeof(pgspEntry)));
 #else
 	size = add_size(size, hash_estimate_size(pgsp_max, sizeof(pgspEntry)));
 #endif
@@ -606,13 +675,13 @@ pgsp_memsize(void)
 static uint32
 gen_hashkey(const void *key, Size keysize)
 {
-	const pgspHashKey *k = (const pgspHashKey *) key;
+	const		pgspHashKey *k = (const pgspHashKey *) key;
 
-	/* 
-	 * The maximum pid number is 2^23 in Linux, 
-	 * so we make a unique value shown below as a hash key.
+	/*
+	 * The maximum pid number is 2^23 in Linux, so we make a unique value
+	 * shown below as a hash key.
 	 */
-	return (uint32)(k->pid + (k->nested_level * (0x1<<24)));
+	return (uint32) (k->pid + (k->nested_level * (0x1 << 24)));
 }
 
 /*
@@ -621,8 +690,8 @@ gen_hashkey(const void *key, Size keysize)
 static int
 compare_hashkey(const void *key1, const void *key2, Size keysize)
 {
-	const pgspHashKey *k1 = (const pgspHashKey *) key1;
-	const pgspHashKey *k2 = (const pgspHashKey *) key2;
+	const		pgspHashKey *k1 = (const pgspHashKey *) key1;
+	const		pgspHashKey *k2 = (const pgspHashKey *) key2;
 
 	if (k1->pid == k2->pid &&
 		k1->nested_level == k2->nested_level)
@@ -639,14 +708,14 @@ compare_hashkey(const void *key1, const void *key2, Size keysize)
  * "plan" need not be null-terminated.
  */
 static pgspEntry *
-entry_alloc(pgspHashKey *key, const char *plan, int plan_len)
+entry_alloc(pgspHashKey * key, const char *plan, int plan_len)
 {
 	pgspEntry  *entry;
 	bool		found;
 
 	/*
-	 * Find or create an entry with desired hash code.
-	 * If hashtable is full, return NULL.
+	 * Find or create an entry with desired hash code. If hashtable is full,
+	 * return NULL.
 	 */
 	if ((entry = (pgspEntry *) hash_search(pgsp_hash, key, HASH_ENTER_NULL, &found)) == NULL)
 		return entry;
@@ -698,11 +767,11 @@ set_state(bool state)
 {
 	bool		is_allowed_role = false;
 
-    /* Superusers or members of pg_read_all_stats members are allowed */
+	/* Superusers or members of pg_read_all_stats members are allowed */
 #if PG_VERSION_NUM >= 100000
-    is_allowed_role = is_member_of_role(GetUserId(), DEFAULT_ROLE_READ_ALL_STATS);
+	is_allowed_role = is_member_of_role(GetUserId(), DEFAULT_ROLE_READ_ALL_STATS);
 #else
-    is_allowed_role = superuser();
+	is_allowed_role = superuser();
 #endif
 
 	if (is_allowed_role)
@@ -746,11 +815,11 @@ pg_show_plans(PG_FUNCTION_ARGS)
 	HASH_SEQ_STATUS hash_seq;
 	pgspEntry  *entry;
 
-    /* Superusers or members of pg_read_all_stats members are allowed */
+	/* Superusers or members of pg_read_all_stats members are allowed */
 #if PG_VERSION_NUM >= 100000
-    is_allowed_role = is_member_of_role(GetUserId(), DEFAULT_ROLE_READ_ALL_STATS);
+	is_allowed_role = is_member_of_role(GetUserId(), DEFAULT_ROLE_READ_ALL_STATS);
 #else
-    is_allowed_role = superuser();
+	is_allowed_role = superuser();
 #endif
 
 	/* hash table must exist already */
@@ -804,22 +873,22 @@ pg_show_plans(PG_FUNCTION_ARGS)
 		bool		nulls[PG_SHOW_PLANS_COLS];
 		int			i = 0;
 
-		/* 
-		 * Delete stored plans which the corresponding SQL statements have 
+		/*
+		 * Delete stored plans which the corresponding SQL statements have
 		 * been already committed or aborted.
 		 *
 		 * These orphan plans occur when the corresponding SQL statement is
 		 * canceled or the executed process crashes.
 		 */
-		if (TransactionIdDidCommit(entry->topxid) 
+		if (TransactionIdDidCommit(entry->topxid)
 			|| TransactionIdDidAbort(entry->topxid))
 		{
 			LWLockRelease(pgsp->lock);
-			
+
 			LWLockAcquire(pgsp->lock, LW_EXCLUSIVE);
 			hash_search(pgsp_hash, &entry->key, HASH_REMOVE, NULL);
 			LWLockRelease(pgsp->lock);
-			
+
 			LWLockAcquire(pgsp->lock, LW_SHARED);
 
 			continue;
@@ -838,15 +907,15 @@ pg_show_plans(PG_FUNCTION_ARGS)
 
 		if (is_allowed_role || entry->userid == userid)
 		{
-			char *pstr = entry->plan;
+			char	   *pstr = entry->plan;
 
-			values[i++] 
-				= CStringGetTextDatum((char *)pg_do_encoding_conversion(
-										  (unsigned char *) pstr,
-										  entry->plan_len,
-										  entry->encoding,
-										  GetDatabaseEncoding()));
-			
+			values[i++]
+				= CStringGetTextDatum((char *) pg_do_encoding_conversion(
+																		 (unsigned char *) pstr,
+																		 entry->plan_len,
+																		 entry->encoding,
+																		 GetDatabaseEncoding()));
+
 			if (pstr != entry->plan)
 				pfree(pstr);
 		}

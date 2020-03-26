@@ -4,12 +4,10 @@
  *		Show query plans of all currently running SQL statements
  *
  * Copyright (c) 2008-2019, PostgreSQL Global Development Group
- * Copyright (c) 2019, Cybertec Schönig & Schönig GmbH
+ * Copyright (c) 2019-2020, Cybertec Schönig & Schönig GmbH
  *
  *-------------------------------------------------------------------------
  */
-#define NESTED_LEVEL			/* Support nested_level */
-
 #include "postgres.h"
 
 #include <unistd.h>
@@ -36,12 +34,11 @@ PG_MODULE_MAGIC;
 /*
  * Define constants
  */
-#ifdef NESTED_LEVEL
 #define PG_SHOW_PLANS_COLS		 5
-#define MAX_NESTED_LEVEL         4	/* temporal value */
-#else
-#define PG_SHOW_PLANS_COLS		 4
-#endif
+#define MAX_NESTED_LEVEL         5	/* This is a misleading name. It is used
+									 * to calculate the number of hash table
+									 * items: MaxConnections times
+									 * MAX_NESTED_LEVEL */
 
 /*
  * Define data types
@@ -49,9 +46,7 @@ PG_MODULE_MAGIC;
 typedef struct pgspHashKey
 {
 	pid_t		pid;
-#ifdef NESTED_LEVEL
 	int			nested_level;
-#endif
 }			pgspHashKey;
 
 typedef struct pgspEntry
@@ -69,13 +64,13 @@ typedef struct pgspEntry
 /* Global shared state */
 typedef struct pgspSharedState
 {
-#if PG_VERSION_NUM >= 90400
 	LWLock	   *lock;			/* protects hashtable search/modification */
-#else
-	LWLockId	lock;			/* protects hashtable search/modification */
-#endif
 	bool		is_enable;		/* Whether to enable the feature or not */
-	slock_t		elock;			/* protects the variable `is_enable` */
+#if PG_VERSION_NUM >= 90500
+	int			plan_format;	/* plan format */
+#endif
+	slock_t		elock;			/* protects the variable `is_enable` and
+								 * `plan_format` */
 }			pgspSharedState;
 
 /*
@@ -100,55 +95,27 @@ static HTAB *pgsp_hash = NULL;
  */
 typedef enum
 {
-#ifdef NESTED_LEVEL
-	PGSP_SHOW_LEVEL_ALL,		/* all level statement's query plans */
-#endif
-	PGSP_SHOW_LEVEL_TOP,		/* only top level statement's query plans */
-	PGSP_SHOW_LEVEL_NONE		/* show no plans */
-}			PGSPShowLevel;
-
-static const struct config_enum_entry show_options[] =
-{
-#ifdef NESTED_LEVEL
-	{"all", PGSP_SHOW_LEVEL_ALL, false},
-#endif
-	{"top", PGSP_SHOW_LEVEL_TOP, false},
-	{"none", PGSP_SHOW_LEVEL_NONE, false},
-	{NULL, 0, false}
-};
-
-typedef enum
-{
-	PLAN_FORMAT_JSON,
-	PLAN_FORMAT_TEXT
+	PLAN_FORMAT_TEXT,
+	PLAN_FORMAT_JSON
 }			PGSPPlanFormats;
 
+#if PG_VERSION_NUM >= 90500
 static const struct config_enum_entry plan_formats[] =
 {
-	{"json", PLAN_FORMAT_JSON, false},
 	{"text", PLAN_FORMAT_TEXT, false},
+	{"json", PLAN_FORMAT_JSON, false},
 	{NULL, 0, false}
 };
+#endif
 
 /*
  * static variables
  */
 static int	pgsp_max;			/* max plans to show */
-static int	pgsp_show_level;	/* show level */
+#if PG_VERSION_NUM >= 90500
 static int	plan_format;		/* output format */
-static int	max_plan_length;	/* max length of query plan */
-
-/*
- * macro
- */
-#ifdef NESTED_LEVEL
-#define pgsp_enabled() \
-	(pgsp_show_level == PGSP_SHOW_LEVEL_ALL || \
-	(pgsp_show_level == PGSP_SHOW_LEVEL_TOP && nested_level == 0))
-#else
-#define pgsp_enabled() \
-	(pgsp_show_level == PGSP_SHOW_LEVEL_TOP && nested_level == 0)
 #endif
+static int	max_plan_length;	/* max length of query plan */
 
 /*
  * Function declarations
@@ -159,10 +126,14 @@ void		_PG_fini(void);
 Datum		pg_show_plans(PG_FUNCTION_ARGS);
 Datum		pg_show_plans_enable(PG_FUNCTION_ARGS);
 Datum		pg_show_plans_disable(PG_FUNCTION_ARGS);
+Datum		pgsp_format_json(PG_FUNCTION_ARGS);
+Datum		pgsp_format_text(PG_FUNCTION_ARGS);
 
 PG_FUNCTION_INFO_V1(pg_show_plans);
 PG_FUNCTION_INFO_V1(pg_show_plans_enable);
 PG_FUNCTION_INFO_V1(pg_show_plans_disable);
+PG_FUNCTION_INFO_V1(pgsp_format_json);
+PG_FUNCTION_INFO_V1(pgsp_format_text);
 
 static Size pgsp_memsize(void);
 static void pgsp_shmem_startup(void);
@@ -180,15 +151,10 @@ static void pgsp_ExecutorFinish(QueryDesc *queryDesc);
 static void pgsp_ExecutorEnd(QueryDesc *queryDesc);
 
 static pgspEntry * entry_alloc(pgspHashKey * key, const char *query, int plan_len);
-#ifdef NESTED_LEVEL
 static void entry_store(char *plan, const int nested_level);
 static void entry_delete(const uint32 pid, const int nested_level);
 static uint32 gen_hashkey(const void *key, Size keysize);
 static int	compare_hashkey(const void *key1, const void *key2, Size keysize);
-#else
-static void entry_store(char *plan);
-static void entry_delete(const uint32 pid);
-#endif
 static void set_state(bool state);
 
 /*
@@ -207,35 +173,25 @@ _PG_init(void)
 							8 * 1024,
 							1024,
 							100 * 1024,
-							PGC_SUSET,
+							PGC_POSTMASTER,
 							0,
 							NULL,
 							NULL,
 							NULL);
 
-	DefineCustomEnumVariable("pg_show_plans.show_level",
-							 "Selects which plans are shown by pg_show_plans.",
-							 NULL,
-							 &pgsp_show_level,
-							 PGSP_SHOW_LEVEL_TOP,
-							 show_options,
-							 PGC_SUSET,
-							 0,
-							 NULL,
-							 NULL,
-							 NULL);
-
+#if PG_VERSION_NUM >= 90500
 	DefineCustomEnumVariable("pg_show_plans.plan_format",
 							 "Set the output format of query plans.",
 							 NULL,
 							 &plan_format,
 							 PLAN_FORMAT_TEXT,
 							 plan_formats,
-							 PGC_SUSET,
+							 PGC_POSTMASTER,
 							 0,
 							 NULL,
 							 NULL,
 							 NULL);
+#endif
 
 	EmitWarningsOnPlaceholders("pg_show_plans");
 
@@ -307,33 +263,23 @@ pgsp_shmem_startup(void)
 	}
 
 	/* Set the initial value to is_enable */
-	if (pgsp_show_level == PGSP_SHOW_LEVEL_NONE)
-		pgsp->is_enable = false;
-	else
-		pgsp->is_enable = true;
+	pgsp->is_enable = true;
+#if PG_VERSION_NUM >= 90500
+	pgsp->plan_format = plan_format;
+#endif
 
 	/* Be sure everyone agrees on the hash table entry size */
 	memset(&info, 0, sizeof(info));
 	info.keysize = sizeof(pgspHashKey);
 	info.entrysize = offsetof(pgspEntry, plan) + max_plan_length;
 
-#ifdef NESTED_LEVEL
 	info.hash = gen_hashkey;
 	info.match = compare_hashkey;
-#endif
 
 	pgsp_hash = ShmemInitHash("pg_show_plans hash",
-#ifdef NESTED_LEVEL
 							  pgsp_max, pgsp_max * MAX_NESTED_LEVEL,
-#else
-							  pgsp_max, pgsp_max,
-#endif
 							  &info,
-#ifdef NESTED_LEVEL
 							  HASH_ELEM | HASH_FUNCTION | HASH_COMPARE);
-#else
-							  HASH_ELEM);
-#endif
 
 	LWLockRelease(AddinShmemInitLock);
 
@@ -354,6 +300,12 @@ pgsp_shmem_shutdown(int code, Datum arg)
 static void
 pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags)
 {
+#if PG_VERSION_NUM >= 90500
+	ExplainState *es = NewExplainState();
+#else
+	ExplainState es;
+#endif
+
 	if (prev_ExecutorStart)
 		prev_ExecutorStart(queryDesc, eflags);
 	else
@@ -373,120 +325,88 @@ pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags)
 	SpinLockRelease(&pgsp->elock);
 
 #if PG_VERSION_NUM >= 90500
-	if (pgsp_enabled())
+	SpinLockAcquire(&pgsp->elock);
+	switch (pgsp->plan_format)
 	{
-		ExplainState *es = NewExplainState();
+		case PLAN_FORMAT_TEXT:
+			es->format = EXPLAIN_FORMAT_TEXT;
+			break;
+		case PLAN_FORMAT_JSON:
+		default:
+			es->format = EXPLAIN_FORMAT_JSON;
+			break;
+	};
+	SpinLockRelease(&pgsp->elock);
 
-		switch (plan_format)
+	ExplainBeginOutput(es);
+	ExplainPrintPlan(es, queryDesc);
+	ExplainEndOutput(es);
+
+	if (es->str->len >= max_plan_length)
+	{
+		/*
+		 * Note: If the length of the query plan is longer than
+		 * max_plan_length, the message below is shown instead of the plan
+		 * string.
+		 */
+		char	   *msg = "<too long query plan string>";
+
+		memcpy(es->str->data, msg, strlen(msg));
+		es->str->len = strlen(msg);
+		es->str->data[es->str->len] = '\0';
+	}
+	else
+	{
+		SpinLockAcquire(&pgsp->elock);
+		if (pgsp->plan_format == PLAN_FORMAT_JSON)
 		{
-			case PLAN_FORMAT_TEXT:
-				es->format = EXPLAIN_FORMAT_TEXT;
-				break;
-			case PLAN_FORMAT_JSON:
-			default:
-				es->format = EXPLAIN_FORMAT_JSON;
-				break;
-		};
-
-		ExplainBeginOutput(es);
-		ExplainPrintPlan(es, queryDesc);
-		ExplainEndOutput(es);
-
-		if (es->str->len >= max_plan_length)
+			es->str->data[0] = '{';
+			es->str->data[es->str->len - 1] = '}';
+		}
+		else if (pgsp->plan_format == PLAN_FORMAT_TEXT)
 		{
-			/*
-			 * Note: If the length of the query plan is longer than
-			 * max_plan_length, the message below is shown instead of the plan
-			 * string.
-			 */
-			char	   *msg = "<too long query plan string>";
-
-			memcpy(es->str->data, msg, strlen(msg));
-			es->str->len = strlen(msg);
+			es->str->len--;
 			es->str->data[es->str->len] = '\0';
 		}
-		else
-		{
-			if (plan_format == PLAN_FORMAT_JSON)
-			{
-				es->str->data[0] = '{';
-				es->str->data[es->str->len - 1] = '}';
-			}
-			else if (plan_format == PLAN_FORMAT_TEXT)
-			{
-				es->str->len--;
-				es->str->data[es->str->len] = '\0';
-			}
-		}
-
-#ifdef NESTED_LEVEL
-		entry_store(es->str->data, nested_level);
-#else
-		entry_store(es->str->data);
-#endif
-
-		pfree(es->str->data);
-
-#else
-
-	if (pgsp_enabled())
-	{
-		ExplainState es;
-
-		ExplainInitState(&es);
-
-		switch (plan_format)
-		{
-			case PLAN_FORMAT_TEXT:
-				es.format = EXPLAIN_FORMAT_TEXT;
-				break;
-			case PLAN_FORMAT_JSON:
-			default:
-				es.format = EXPLAIN_FORMAT_JSON;
-				break;
-		};
-
-		ExplainBeginOutput(&es);
-		ExplainPrintPlan(&es, queryDesc);
-		ExplainEndOutput(&es);
-
-		if (es.str->len >= max_plan_length)
-		{
-			/*
-			 * Note: If the length of the query plan is longer than
-			 * max_plan_length, the message below is shown instead of the plan
-			 * string.
-			 */
-			char	   *msg = "<too long query plan string>";
-
-			memcpy(es.str->data, msg, strlen(msg));
-			es.str->len = strlen(msg);
-			es.str->data[es.str->len] = '\0';
-		}
-		else
-		{
-			if (plan_format == PLAN_FORMAT_JSON)
-			{
-				es.str->data[0] = '{';
-				es.str->data[es.str->len - 1] = '}';
-			}
-			else if (plan_format == PLAN_FORMAT_TEXT)
-			{
-				es.str->len--;
-				es.str->data[es.str->len] = '\0';
-			}
-		}
-
-#ifdef NESTED_LEVEL
-		entry_store(es.str->data, nested_level);
-#else
-		entry_store(es.str->data);
-#endif
-
-		pfree(es.str->data);
-
-#endif
+		SpinLockRelease(&pgsp->elock);
 	}
+
+	entry_store(es->str->data, nested_level);
+
+	pfree(es->str->data);
+
+#else
+
+	ExplainInitState(&es);
+
+	ExplainBeginOutput(&es);
+	ExplainPrintPlan(&es, queryDesc);
+	ExplainEndOutput(&es);
+
+	if (es.str->len >= max_plan_length)
+	{
+		/*
+		 * Note: If the length of the query plan is longer than
+		 * max_plan_length, the message below is shown instead of the plan
+		 * string.
+		 */
+		char	   *msg = "<too long query plan string>";
+
+		memcpy(es.str->data, msg, strlen(msg));
+		es.str->len = strlen(msg);
+		es.str->data[es.str->len] = '\0';
+	}
+	else
+	{
+		SpinLockAcquire(&pgsp->elock);
+		es.str->len--;
+		es.str->data[es.str->len] = '\0';
+		SpinLockRelease(&pgsp->elock);
+	}
+
+	entry_store(es.str->data, nested_level);
+	pfree(es.str->data);
+#endif
 }
 
 /*
@@ -561,12 +481,7 @@ pgsp_ExecutorEnd(QueryDesc *queryDesc)
 	if (pgsp->is_enable)
 	{
 		SpinLockRelease(&pgsp->elock);
-		if (pgsp_enabled())
-#ifdef NESTED_LEVEL
-			entry_delete(getpid(), nested_level);
-#else
-			entry_delete(getpid());
-#endif
+		entry_delete(getpid(), nested_level);
 	}
 	else
 		SpinLockRelease(&pgsp->elock);
@@ -582,11 +497,7 @@ pgsp_ExecutorEnd(QueryDesc *queryDesc)
  * Store a plan to the hashtable.
  */
 static void
-#ifdef NESTED_LEVEL
 entry_store(char *plan, const int nested_level)
-#else
-entry_store(char *plan)
-#endif
 {
 	pgspHashKey key;
 	pgspEntry  *entry;
@@ -599,12 +510,12 @@ entry_store(char *plan)
 
 	/* Safety check... */
 	if (!pgsp || !pgsp_hash)
+	{
 		return;
+	}
 
 	key.pid = getpid();
-#ifdef NESTED_LEVEL
 	key.nested_level = nested_level;
-#endif
 	plan_len = strlen(plan);
 
 	Assert(plan_len >= 0 && plan_len < max_plan_length);
@@ -659,16 +570,10 @@ pgsp_memsize(void)
 	Size		size;
 
 	size = MAXALIGN(sizeof(pgspSharedState));
-#ifdef NESTED_LEVEL
 	size = add_size(size, hash_estimate_size(pgsp_max * MAX_NESTED_LEVEL, sizeof(pgspEntry)));
-#else
-	size = add_size(size, hash_estimate_size(pgsp_max, sizeof(pgspEntry)));
-#endif
-
 	return size;
 }
 
-#ifdef NESTED_LEVEL
 /*
  * Generate a unique value from hashkey for the hashtable.
  */
@@ -699,7 +604,6 @@ compare_hashkey(const void *key1, const void *key2, Size keysize)
 	else
 		return 1;
 }
-#endif
 
 /*
  * Allocate a new hashtable entry.
@@ -738,11 +642,7 @@ entry_alloc(pgspHashKey * key, const char *plan, int plan_len)
  * Delete all stored plans related to pid.
  */
 static void
-#ifdef NESTED_LEVEL
 entry_delete(const uint32 pid, const int nested_level)
-#else
-entry_delete(const uint32 pid)
-#endif
 {
 	pgspHashKey key;
 
@@ -751,9 +651,8 @@ entry_delete(const uint32 pid)
 		return;
 
 	key.pid = pid;
-#ifdef NESTED_LEVEL
 	key.nested_level = nested_level;
-#endif
+
 	LWLockAcquire(pgsp->lock, LW_EXCLUSIVE);
 	hash_search(pgsp_hash, &key, HASH_REMOVE, NULL);
 	LWLockRelease(pgsp->lock);
@@ -796,6 +695,49 @@ Datum
 pg_show_plans_disable(PG_FUNCTION_ARGS)
 {
 	set_state(false);
+	PG_RETURN_VOID();
+}
+
+
+/*
+ * Set format to plan_format
+ */
+static void
+set_format(int format)
+{
+	bool		is_allowed_role = false;
+
+	/* Superusers or members of pg_read_all_stats members are allowed */
+#if PG_VERSION_NUM >= 100000
+	is_allowed_role = is_member_of_role(GetUserId(), DEFAULT_ROLE_READ_ALL_STATS);
+#else
+	is_allowed_role = superuser();
+#endif
+
+	if (is_allowed_role)
+	{
+#if PG_VERSION_NUM >= 90500
+		SpinLockAcquire(&pgsp->elock);
+		pgsp->plan_format = format;
+		SpinLockRelease(&pgsp->elock);
+#endif
+	}
+}
+
+/*
+ * Change the output format.
+ */
+Datum
+pgsp_format_json(PG_FUNCTION_ARGS)
+{
+	set_format(PLAN_FORMAT_JSON);
+	PG_RETURN_VOID();
+}
+
+Datum
+pgsp_format_text(PG_FUNCTION_ARGS)
+{
+	set_format(PLAN_FORMAT_TEXT);
 	PG_RETURN_VOID();
 }
 
@@ -899,9 +841,7 @@ pg_show_plans(PG_FUNCTION_ARGS)
 		memset(nulls, 0, sizeof(nulls));
 
 		values[i++] = ObjectIdGetDatum(entry->key.pid);
-#ifdef NESTED_LEVEL
 		values[i++] = ObjectIdGetDatum(entry->key.nested_level);
-#endif
 		values[i++] = ObjectIdGetDatum(entry->userid);
 		values[i++] = ObjectIdGetDatum(entry->dbid);
 

@@ -4,7 +4,7 @@
 
 You can select the output format of plans: TEXT or JSON.
 
-This module supports PostgreSQL versions from 9.1 to 12.
+This module supports PostgreSQL versions from 9.5 to 12.
 
 ### Note
 When the server starts, pg_show_plans makes a hashtable  on the shared-memory in order to temporarily store query plans.
@@ -12,15 +12,15 @@ The hashtable size cannot be changed, so the plans are not stored if the hashtab
 
 ## Version
 
-*Version 1.0 RC*
+*Version 1.0 RC 2*
 
 ## Installation
 
 You can install it to do the usual way shown below.
 
 ```
-$ tar xvfj postgresql-11.4.tar.bz2
-$ cd postgresql-11.4/contrib
+$ tar xvfj postgresql-12.2.tar.bz2
+$ cd postgresql-12.2/contrib
 $ git clone https://github.com/cybertec-postgresql/pg_show_plans.git
 $ cd pg_show_plans
 $ make && make install
@@ -90,30 +90,26 @@ query |
 
 ## pg_show_plans View
  - *pid*: the pid of the process which the query is running.    
- - *level*: the level of the query which runs the query. Top level is `0`.
+ - *level*: the level of the query which runs the query. Top level is `0`. For example, if you execute a simple select query, the level of this query's plan is 0. If you execute a function that invokes a select query, level 0 is the plan of the function and level 1 is the plan of the select query invoked by the function.
  - *userid*: the userid of the user which runs the query.
  - *dbid*: the database id of the database which the query is running.
  - *plan*: the query plan of the running query.
 
 ## Configuration Parameters
- - *pg_show_plans.show_level* : It controls the level of query plans. You can select one of `all`,`top` and `none`. "all" shows all level of the query plan. For example, when you execute a function defined by PL/pgSQL, the caller SQL statement (level 0) and the internal SQL statements in the function (level 1) are shown. "top" shows the top level of the query plan. "none" does not store the query plans, so the pg_show_plans view does not show anything. Default is `top`.
-
- - *pg_show_plans.plan_format* : It controls the output format of query plans. It can be selected either `json` or `text`. Default is `text`.
-
+ - *pg_show_plans.plan_format* : It controls the output format of query plans. It can be selected either `text` or `json`. Default is `text`.
  - *pg_show_plans.max_plan_length* : It sets the maximum length of query plans. Default is `8192` [byte]. Note that this parameter must be set to an integer.
 
 ## Functions
  - *pg_show_plans_disable()* disables the feature. Only superuser can execute it.
  - *pg_show_plans_enable()* enables the feature. Only superuser can execute it.
+ - *pgsp_format_json()* changes the output format to `json`. Note that the format of the plans that are stored in the memory before executing this function cannot be changed.
+ - *pgsp_format_text()* changes the output format to `text`. Note that the format of the plans that are stored in the memory before executing this function cannot be changed.
+
 
 ## Change Log
-
+ - 26 Mar, 2020: Version 1.0 RC2 Released. Added pgsp_format_json() and pgsp_format_text(); deleted the parameter `show_level`.
  - 21 Dec, 2019: Version 1.0 RC Released. Supported versions from 9.1 to 9.4.
-
  - 16 Aug, 2019: Version 0.8 Released. Supported the parameter:max_plan_length.
-
  - 12 Aug, 2019: Version 0.3 Released. Supported garbage collection.
-
  - 9 Aug, 2019: Version 0.2 Released. Supported nested queries.
-
  - 8 Aug, 2019: Version 0.1 Released.

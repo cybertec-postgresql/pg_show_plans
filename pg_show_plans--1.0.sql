@@ -14,6 +14,16 @@ RETURNS void
 AS 'MODULE_PATHNAME'
 LANGUAGE C;
 
+CREATE FUNCTION pgsp_format_json()
+RETURNS void
+AS 'MODULE_PATHNAME'
+LANGUAGE C;
+
+CREATE FUNCTION pgsp_format_text()
+RETURNS void
+AS 'MODULE_PATHNAME'
+LANGUAGE C;
+
 CREATE FUNCTION pg_show_plans(
     OUT pid int8,
     OUT level int8,
@@ -34,3 +44,5 @@ GRANT SELECT ON pg_show_plans TO PUBLIC;
 -- Don't want this to be available to non-superusers.
 REVOKE ALL ON FUNCTION pg_show_plans_enable() FROM PUBLIC;
 REVOKE ALL ON FUNCTION pg_show_plans_disable() FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgsp_format_json() FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgsp_format_text() FROM PUBLIC;

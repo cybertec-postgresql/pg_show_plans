@@ -12,7 +12,7 @@ The hashtable size cannot be changed, so the plans are not stored if the hashtab
 
 ## Version
 
-*Version 1.0 RC 2*
+*Version 1.0 RC 3*
 
 ## Installation
 
@@ -107,6 +107,7 @@ query |
 
 
 ## Change Log
+ - 10 Apr, 2020: Version 1.0 RC3 Released. Supported Streaming Replication. This extension can be run on the standby server since this version.
  - 26 Mar, 2020: Version 1.0 RC2 Released. Added pgsp_format_json() and pgsp_format_text(); deleted the parameter `show_level`.
  - 21 Dec, 2019: Version 1.0 RC Released. Supported versions from 9.1 to 9.4.
  - 16 Aug, 2019: Version 0.8 Released. Supported the parameter:max_plan_length.

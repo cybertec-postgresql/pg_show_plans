@@ -9,13 +9,13 @@
  *-------------------------------------------------------------------------
  */
 #include "postgres.h"
-
 #include <unistd.h>
 #include <dlfcn.h>
 
 #include "access/hash.h"
 #include "access/transam.h"
 #include "access/xact.h"
+#include "access/xlog.h"
 #include "catalog/pg_authid.h"
 #include "funcapi.h"
 #include "mb/pg_wchar.h"
@@ -28,6 +28,7 @@
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "commands/explain.h"
+#include "pgstat.h"
 
 PG_MODULE_MAGIC;
 
@@ -372,7 +373,6 @@ pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags)
 	}
 
 	entry_store(es->str->data, nested_level);
-
 	pfree(es->str->data);
 
 #else
@@ -413,7 +413,7 @@ pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags)
  * ExecutorRun hook: all we need do is show nesting depth
  */
 static void
-			pgsp_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction,
+pgsp_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction,
 #if PG_VERSION_NUM >= 100000
 							 uint64 count, bool execute_once)
 #elif PG_VERSION_NUM >= 90600
@@ -477,6 +477,7 @@ static void
 pgsp_ExecutorEnd(QueryDesc *queryDesc)
 {
 	/* Delete entry */
+
 	SpinLockAcquire(&pgsp->elock);
 	if (pgsp->is_enable)
 	{
@@ -485,7 +486,6 @@ pgsp_ExecutorEnd(QueryDesc *queryDesc)
 	}
 	else
 		SpinLockRelease(&pgsp->elock);
-
 
 	if (prev_ExecutorEnd)
 		prev_ExecutorEnd(queryDesc);
@@ -501,7 +501,6 @@ entry_store(char *plan, const int nested_level)
 {
 	pgspHashKey key;
 	pgspEntry  *entry;
-	char	   *norm_query = NULL;
 	int			plan_len;
 
 	pgspEntry  *e;
@@ -510,9 +509,7 @@ entry_store(char *plan, const int nested_level)
 
 	/* Safety check... */
 	if (!pgsp || !pgsp_hash)
-	{
 		return;
-	}
 
 	key.pid = getpid();
 	key.nested_level = nested_level;
@@ -522,32 +519,48 @@ entry_store(char *plan, const int nested_level)
 
 	/* Look up the hash table entry with shared lock. */
 	LWLockAcquire(pgsp->lock, LW_SHARED);
-
 	entry = (pgspEntry *) hash_search(pgsp_hash, &key, HASH_FIND, NULL);
+	LWLockRelease(pgsp->lock);
 
-	/* Create new entry, if not present */
-	if (!entry)
+	LWLockAcquire(pgsp->lock, LW_EXCLUSIVE);
+
+	/* Delete old entries if exist. */
+	if (entry != NULL)
 	{
-		LWLockRelease(pgsp->lock);
+		pgspHashKey tmp_key;
 
-		LWLockAcquire(pgsp->lock, LW_EXCLUSIVE);
-		if ((entry = entry_alloc(&key, "", 0)) == NULL)
+		tmp_key.pid = key.pid;
+		tmp_key.nested_level = nested_level;
+		do
 		{
-			/* New entry was not created since hashtable is full. */
-			LWLockRelease(pgsp->lock);
-			return;
+			hash_search(pgsp_hash, &tmp_key, HASH_REMOVE, NULL);
+			tmp_key.nested_level++;
 		}
+		while (hash_search(pgsp_hash, &tmp_key, HASH_FIND, NULL) != NULL);
 	}
 
-	/* Grab the spinlock while updating the entry */
+	/* Create new entry */
+	if ((entry = entry_alloc(&key, "", 0)) == NULL)
+	{
+		/* New entry was not created since hashtable is full. */
+		LWLockRelease(pgsp->lock);
+		return;
+	}
+
+	/* Store data into the entry. */
 	e = (pgspEntry *) entry;
 	SpinLockAcquire(&e->mutex);
-
 	e->userid = GetUserId();
 	e->dbid = MyDatabaseId;
 	e->encoding = GetDatabaseEncoding();
-	e->topxid = GetTopTransactionId();
-
+	if (!RecoveryInProgress())
+		e->topxid = GetTopTransactionId();
+	else
+		/*
+		 * In recovery mode, we use pid as the key instead of txid for garbage
+		 * collection.
+		 */
+		e->topxid = (uint32) key.pid;
 	memcpy(entry->plan, plan, plan_len);
 	entry->plan_len = plan_len;
 	entry->plan[plan_len] = '\0';
@@ -555,10 +568,6 @@ entry_store(char *plan, const int nested_level)
 	SpinLockRelease(&e->mutex);
 
 	LWLockRelease(pgsp->lock);
-
-	/* We postpone this pfree until we're out of the lock */
-	if (norm_query)
-		pfree(norm_query);
 }
 
 /*
@@ -819,21 +828,73 @@ pg_show_plans(PG_FUNCTION_ARGS)
 		 * Delete stored plans which the corresponding SQL statements have
 		 * been already committed or aborted.
 		 *
-		 * These orphan plans occur when the corresponding SQL statement is
+		 * These garbage plans occur when the corresponding SQL statement is
 		 * canceled or the executed process crashes.
 		 */
-		if (TransactionIdDidCommit(entry->topxid)
-			|| TransactionIdDidAbort(entry->topxid))
+		if (!RecoveryInProgress())
 		{
-			LWLockRelease(pgsp->lock);
+			if (TransactionIdDidCommit(entry->topxid)
+				|| TransactionIdDidAbort(entry->topxid))
+			{
+				LWLockRelease(pgsp->lock);
 
-			LWLockAcquire(pgsp->lock, LW_EXCLUSIVE);
-			hash_search(pgsp_hash, &entry->key, HASH_REMOVE, NULL);
-			LWLockRelease(pgsp->lock);
+				LWLockAcquire(pgsp->lock, LW_EXCLUSIVE);
+				hash_search(pgsp_hash, &entry->key, HASH_REMOVE, NULL);
+				LWLockRelease(pgsp->lock);
 
-			LWLockAcquire(pgsp->lock, LW_SHARED);
+				LWLockAcquire(pgsp->lock, LW_SHARED);
 
-			continue;
+				continue;
+			}
+		}
+		else
+		{
+			/*
+			 * In recovery mode, we cannot use txid. Therefore, we check
+			 * whether the pid of the entry is still running and the state of
+			 * the pid is active in each entry.
+			 *
+			 * If the pid of the entry does not already exist, the entry has
+			 * to be removed. And the pid of the entry still exists but the
+			 * state of the pid is not active, we have to also remove the
+			 * entry because it is a garbege plan created by canceling the
+			 * previous transaction.
+			 *
+			 * This part is not efficient because of a for-loop, however, we
+			 * do not care about it because this function is not often
+			 * executed.
+			 */
+			int			num_backends = pgstat_fetch_stat_numbackends();
+			int			curr_backend;
+			uint32		pid = (uint32) entry->topxid;
+			bool		exists = false;
+
+			for (curr_backend = 1; curr_backend <= num_backends; curr_backend++)
+			{
+				LocalPgBackendStatus *local_beentry;
+				PgBackendStatus *beentry;
+
+				local_beentry = pgstat_fetch_stat_local_beentry(curr_backend);
+				beentry = &local_beentry->backendStatus;
+				if (beentry->st_procpid == pid && beentry->st_state == STATE_RUNNING)
+				{
+					exists = true;
+					break;
+				}
+			}
+
+			if (!exists)
+			{
+				LWLockRelease(pgsp->lock);
+
+				LWLockAcquire(pgsp->lock, LW_EXCLUSIVE);
+				hash_search(pgsp_hash, &entry->key, HASH_REMOVE, NULL);
+				LWLockRelease(pgsp->lock);
+
+				LWLockAcquire(pgsp->lock, LW_SHARED);
+
+				continue;
+			}
 		}
 
 		/* Set values */

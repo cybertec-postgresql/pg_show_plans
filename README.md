@@ -4,7 +4,7 @@
 
 You can select the output format of plans: TEXT or JSON.
 
-This module supports PostgreSQL versions from 9.5 to 12.
+This module supports PostgreSQL versions from 9.5 to 13.
 
 ### Note
 When the server starts, pg_show_plans makes a hashtable  on the shared-memory in order to temporarily store query plans.
@@ -19,8 +19,8 @@ The hashtable size cannot be changed, so the plans are not stored if the hashtab
 You can install it to do the usual way shown below.
 
 ```
-$ tar xvfj postgresql-12.2.tar.bz2
-$ cd postgresql-12.2/contrib
+$ tar xvfj postgresql-13.0.tar.bz2
+$ cd postgresql-13.0/contrib
 $ git clone https://github.com/cybertec-postgresql/pg_show_plans.git
 $ cd pg_show_plans
 $ make && make install
@@ -107,6 +107,7 @@ query |
 
 
 ## Change Log
+ - 19 Oct, 2020: Confirmed this can be run on PostgreSQL 13.0.
  - 10 Apr, 2020: Version 1.0 RC3 Released. Supported Streaming Replication. This extension can be run on the standby server since this version.
  - 26 Mar, 2020: Version 1.0 RC2 Released. Added pgsp_format_json() and pgsp_format_text(); deleted the parameter `show_level`.
  - 21 Dec, 2019: Version 1.0 RC Released. Supported versions from 9.1 to 9.4.

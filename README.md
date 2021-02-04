@@ -12,7 +12,7 @@ The hashtable size cannot be changed, so the plans are not stored if the hashtab
 
 ## Version
 
-*Version 1.0 RC 3*
+*Version 1.0 RC 4*
 
 ## Installation
 
@@ -95,18 +95,44 @@ query |
  - *dbid*: the database id of the database which the query is running.
  - *plan*: the query plan of the running query.
 
-## Configuration Parameters
- - *pg_show_plans.plan_format* : It controls the output format of query plans. It can be selected either `text` or `json`. Default is `text`.
- - *pg_show_plans.max_plan_length* : It sets the maximum length of query plans. Default is `8192` [byte]. Note that this parameter must be set to an integer.
-
 ## Functions
  - *pg_show_plans_disable()* disables the feature. Only superuser can execute it.
  - *pg_show_plans_enable()* enables the feature. Only superuser can execute it.
  - *pgsp_format_json()* changes the output format to `json`. Note that the format of the plans that are stored in the memory before executing this function cannot be changed.
  - *pgsp_format_text()* changes the output format to `text`. Note that the format of the plans that are stored in the memory before executing this function cannot be changed.
 
+## Configuration Parameters
+ - *pg_show_plans.plan_format* : It controls the output format of query plans. It can be selected either `text` or `json`. Default is `text`.
+ - *pg_show_plans.max_plan_length* : It sets the maximum length of query plans. Default is `8192` [byte]. Note that this parameter must be set to an integer.
+ - *pg_show_plans.enable* : It controls whether this feature is enabled or not in each user. Default is 'true'. See also the Workaround section shown below.
+
+## Workaround
+The pg_create_logical_replication_slot() function, which is used to create a logical replication slot, returns error in default setting because the CreateInitDecodingContext() function invoked by this function and the GetTopTransactionId() function invoked by this module make a conflict.
+
+```
+postgres=# SELECT pg_create_logical_replication_slot('myslot', 'pgoutput');
+ERROR:  cannot create logical replication slot in transaction that has performed writes
+```
+
+In this case, the parameter pg_show_plans.enable can be used to avoid the conflict.
+
+```
+postgres=# set pg_show_plans.enable = off;
+SET
+postgres=# SELECT pg_create_logical_replication_slot('myslot', 'pgoutput');
+ pg_create_logical_replication_slot
+------------------------------------
+ (myslot,0/1572F90)
+(1 row)
+
+postgres=# SET pg_show_plans.enable = on;
+SET
+```
+Currently, only this function has been confirmed to occur in this conflict.
+
 
 ## Change Log
+ - 4 Feb, 2021: Added a parameter:pg_show_plans.enable.
  - 19 Oct, 2020: Confirmed this can be run on PostgreSQL 13.0.
  - 10 Apr, 2020: Version 1.0 RC3 Released. Supported Streaming Replication. This extension can be run on the standby server since this version.
  - 26 Mar, 2020: Version 1.0 RC2 Released. Added pgsp_format_json() and pgsp_format_text(); deleted the parameter `show_level`.

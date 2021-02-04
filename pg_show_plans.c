@@ -4,7 +4,7 @@
  *		Show query plans of all currently running SQL statements
  *
  * Copyright (c) 2008-2019, PostgreSQL Global Development Group
- * Copyright (c) 2019-2020, Cybertec Schönig & Schönig GmbH
+ * Copyright (c) 2019-2021, Cybertec Schönig & Schönig GmbH
  *
  *-------------------------------------------------------------------------
  */
@@ -117,6 +117,7 @@ static int	pgsp_max;			/* max plans to show */
 static int	plan_format;		/* output format */
 #endif
 static int	max_plan_length;	/* max length of query plan */
+static bool pgsp_enable;		/* Whether the plan can be shown */
 
 /*
  * Function declarations
@@ -166,6 +167,17 @@ _PG_init(void)
 {
 	if (!process_shared_preload_libraries_in_progress)
 		return;
+
+	DefineCustomBoolVariable("pg_show_plans.enable",
+							 "Whether the plan can be shown.",
+							 NULL,
+							 &pgsp_enable,
+							 true,
+							 PGC_USERSET,
+							 0,
+							 NULL,
+							 NULL,
+							 NULL);
 
 	DefineCustomIntVariable("pg_show_plans.max_plan_length",
 							"Set the maximum plan length.",
@@ -312,6 +324,10 @@ pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags)
 	else
 		standard_ExecutorStart(queryDesc, eflags);
 
+	/* Bypass the following steps if this pgsp_enable is set to false  */
+	if (!pgsp_enable)
+		return;
+
 	/*
 	 * Execute EXPLAIN and Store the query plan into the hashtable
 	 */
@@ -324,6 +340,8 @@ pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags)
 		return;
 	}
 	SpinLockRelease(&pgsp->elock);
+
+
 
 #if PG_VERSION_NUM >= 90500
 	SpinLockAcquire(&pgsp->elock);
@@ -342,6 +360,7 @@ pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags)
 	ExplainBeginOutput(es);
 	ExplainPrintPlan(es, queryDesc);
 	ExplainEndOutput(es);
+
 
 	if (es->str->len >= max_plan_length)
 	{
@@ -371,7 +390,6 @@ pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags)
 		}
 		SpinLockRelease(&pgsp->elock);
 	}
-
 	entry_store(es->str->data, nested_level);
 	pfree(es->str->data);
 
@@ -476,16 +494,19 @@ pgsp_ExecutorFinish(QueryDesc *queryDesc)
 static void
 pgsp_ExecutorEnd(QueryDesc *queryDesc)
 {
-	/* Delete entry */
-
-	SpinLockAcquire(&pgsp->elock);
-	if (pgsp->is_enable)
+	/* Bypass the following steps if this pgsp_enable is set to false  */
+	if (pgsp_enable)
 	{
-		SpinLockRelease(&pgsp->elock);
-		entry_delete(getpid(), nested_level);
+		/* Delete entry */
+		SpinLockAcquire(&pgsp->elock);
+		if (pgsp->is_enable)
+		{
+			SpinLockRelease(&pgsp->elock);
+			entry_delete(getpid(), nested_level);
+		}
+		else
+			SpinLockRelease(&pgsp->elock);
 	}
-	else
-		SpinLockRelease(&pgsp->elock);
 
 	if (prev_ExecutorEnd)
 		prev_ExecutorEnd(queryDesc);
@@ -553,14 +574,17 @@ entry_store(char *plan, const int nested_level)
 	e->userid = GetUserId();
 	e->dbid = MyDatabaseId;
 	e->encoding = GetDatabaseEncoding();
+
 	if (!RecoveryInProgress())
 		e->topxid = GetTopTransactionId();
 	else
+
 		/*
 		 * In recovery mode, we use pid as the key instead of txid for garbage
 		 * collection.
 		 */
 		e->topxid = (uint32) key.pid;
+
 	memcpy(entry->plan, plan, plan_len);
 	entry->plan_len = plan_len;
 	entry->plan[plan_len] = '\0';

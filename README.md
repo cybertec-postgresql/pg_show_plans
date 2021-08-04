@@ -4,7 +4,7 @@
 
 You can select the output format of plans: TEXT or JSON.
 
-This module supports PostgreSQL versions from 9.5 to 13.
+This module supports PostgreSQL versions from 9.5 to 14.
 
 ### Note
 When the server starts, pg_show_plans makes a hashtable  on the shared-memory in order to temporarily store query plans.

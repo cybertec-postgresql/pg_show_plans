@@ -700,7 +700,9 @@ set_state(bool state)
 	bool		is_allowed_role = false;
 
 	/* Superusers or members of pg_read_all_stats members are allowed */
-#if PG_VERSION_NUM >= 100000
+#if PG_VERSION_NUM >= 140000
+	is_allowed_role = is_member_of_role(GetUserId(), ROLE_PG_READ_ALL_STATS);
+#elif PG_VERSION_NUM >= 100000
 	is_allowed_role = is_member_of_role(GetUserId(), DEFAULT_ROLE_READ_ALL_STATS);
 #else
 	is_allowed_role = superuser();
@@ -741,7 +743,9 @@ set_format(int format)
 	bool		is_allowed_role = false;
 
 	/* Superusers or members of pg_read_all_stats members are allowed */
-#if PG_VERSION_NUM >= 100000
+#if PG_VERSION_NUM >= 140000
+	is_allowed_role = is_member_of_role(GetUserId(), ROLE_PG_READ_ALL_STATS);
+#elif PG_VERSION_NUM >= 100000
 	is_allowed_role = is_member_of_role(GetUserId(), DEFAULT_ROLE_READ_ALL_STATS);
 #else
 	is_allowed_role = superuser();
@@ -791,7 +795,9 @@ pg_show_plans(PG_FUNCTION_ARGS)
 	pgspEntry  *entry;
 
 	/* Superusers or members of pg_read_all_stats members are allowed */
-#if PG_VERSION_NUM >= 100000
+#if PG_VERSION_NUM >= 140000
+	is_allowed_role = is_member_of_role(GetUserId(), ROLE_PG_READ_ALL_STATS);
+#elif PG_VERSION_NUM >= 100000
 	is_allowed_role = is_member_of_role(GetUserId(), DEFAULT_ROLE_READ_ALL_STATS);
 #else
 	is_allowed_role = superuser();

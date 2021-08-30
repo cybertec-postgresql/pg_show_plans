@@ -105,6 +105,7 @@ query |
  - *pg_show_plans.plan_format* : It controls the output format of query plans. It can be selected either `text` or `json`. Default is `text`.
  - *pg_show_plans.max_plan_length* : It sets the maximum length of query plans. Default is `8192` [byte]. Note that this parameter must be set to an integer.
  - *pg_show_plans.enable* : It controls whether this feature is enabled or not in each user. Default is 'true'. See also the Workaround section shown below.
+ - *pg_show_plans.enable_txid* : It controls whether txid is used as a hash key. Default is 'false'. If true, the pg_show_plan function can efficiently process the GC, however, it has the side effect of consuming txid whenever execute a query, even if it doesn't really need it like SELECT 1. This was introduced to be used when trying to reproduce past behavior. Therefore, it is not recommended to set this true.
 
 ## Workaround
 The pg_create_logical_replication_slot() function, which is used to create a logical replication slot, returns error in default setting because the CreateInitDecodingContext() function invoked by this function and the GetTopTransactionId() function invoked by this module make a conflict.
@@ -132,6 +133,7 @@ Currently, only this function has been confirmed to occur in this conflict.
 
 
 ## Change Log
+ - 30 Aug, 2021: Added a parameter:pg_show_plans.enable_txid.
  - 4 Feb, 2021: Added a parameter:pg_show_plans.enable.
  - 19 Oct, 2020: Confirmed this can be run on PostgreSQL 13.0.
  - 10 Apr, 2020: Version 1.0 RC3 Released. Supported Streaming Replication. This extension can be run on the standby server since this version.

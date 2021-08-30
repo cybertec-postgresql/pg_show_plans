@@ -118,6 +118,8 @@ static int	plan_format;		/* output format */
 #endif
 static int	max_plan_length;	/* max length of query plan */
 static bool pgsp_enable;		/* Whether the plan can be shown */
+static bool pgsp_enable_txid;
+
 
 /*
  * Function declarations
@@ -205,6 +207,17 @@ _PG_init(void)
 							 NULL,
 							 NULL);
 #endif
+
+	DefineCustomBoolVariable("pg_show_plans.enable_txid",
+							 "Whether txid is used as a hash key.",
+							 "If true, the pg_show_plan function can efficiently process the GC, however, it has the side effect of consuming TXID whenever execute a query, even if it doesn't really need it like SELECT 1.",
+							 &pgsp_enable_txid,
+							 false,
+							 PGC_USERSET,
+							 0,
+							 NULL,
+							 NULL,
+							 NULL);
 
 	EmitWarningsOnPlaceholders("pg_show_plans");
 
@@ -431,7 +444,7 @@ pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags)
  * ExecutorRun hook: all we need do is show nesting depth
  */
 static void
-pgsp_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction,
+			pgsp_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction,
 #if PG_VERSION_NUM >= 100000
 							 uint64 count, bool execute_once)
 #elif PG_VERSION_NUM >= 90600
@@ -575,13 +588,13 @@ entry_store(char *plan, const int nested_level)
 	e->dbid = MyDatabaseId;
 	e->encoding = GetDatabaseEncoding();
 
-	if (!RecoveryInProgress())
+	if (!RecoveryInProgress() && pgsp_enable_txid)
 		e->topxid = GetTopTransactionId();
 	else
 
 		/*
-		 * In recovery mode, we use pid as the key instead of txid for garbage
-		 * collection.
+		 * In recovery mode or if pgsp_enable_txid is false, we use pid as the
+		 * key instead of txid for garbage collection.
 		 */
 		e->topxid = (uint32) key.pid;
 
@@ -861,7 +874,7 @@ pg_show_plans(PG_FUNCTION_ARGS)
 		 * These garbage plans occur when the corresponding SQL statement is
 		 * canceled or the executed process crashes.
 		 */
-		if (!RecoveryInProgress())
+		if (!RecoveryInProgress() && pgsp_enable_txid)
 		{
 			if (TransactionIdDidCommit(entry->topxid)
 				|| TransactionIdDidAbort(entry->topxid))
@@ -880,9 +893,9 @@ pg_show_plans(PG_FUNCTION_ARGS)
 		else
 		{
 			/*
-			 * In recovery mode, we cannot use txid. Therefore, we check
-			 * whether the pid of the entry is still running and the state of
-			 * the pid is active in each entry.
+			 * In recovery mode or if pg_enable_txid is false, we cannot use
+			 * txid. Therefore, we check whether the pid of the entry is still
+			 * running and the state of the pid is active in each entry.
 			 *
 			 * If the pid of the entry does not already exist, the entry has
 			 * to be removed. And the pid of the entry still exists but the

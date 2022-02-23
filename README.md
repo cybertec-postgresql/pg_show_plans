@@ -19,11 +19,18 @@ The hashtable size cannot be changed, so the plans are not stored if the hashtab
 You can install it to do the usual way shown below.
 
 ```
+# If you have source codes
 $ tar xvfj postgresql-13.0.tar.bz2
 $ cd postgresql-13.0/contrib
 $ git clone https://github.com/cybertec-postgresql/pg_show_plans.git
 $ cd pg_show_plans
 $ make && make install
+
+# If you want to using pgxs
+$ git clone https://github.com/cybertec-postgresql/pg_show_plans.git
+$ cd pg_show_plans
+$ USE_PGXS=1 make
+$ USE_PGXS=1 make install
 ```
 
 You must add the line shown below in your postgresql.conf.

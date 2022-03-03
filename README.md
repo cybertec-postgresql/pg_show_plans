@@ -103,7 +103,7 @@ query |
 
 ## Configuration Parameters
  - *pg_show_plans.plan_format* : It controls the output format of query plans. It can be selected either `text` or `json`. Default is `text`.
- - *pg_show_plans.max_plan_length* : It sets the maximum length of query plans. Default is `8192` [byte]. Note that this parameter must be set to an integer.
+ - *pg_show_plans.max_plan_length* : It sets the maximum length of query plans. Default is `8192` [byte]. Note that this parameter must be set to an integer. Note that pg_show plans allocates approximately (max_plan_length * max_connecions * 5) bytes on the shared memory to store plans, Therefore, if the value of max_plan_length is too large, PostgreSQL may not start due to an out of memory error.
  - *pg_show_plans.enable* : It controls whether this feature is enabled or not in each user. Default is 'true'. See also the Workaround section shown below.
  - *pg_show_plans.enable_txid* : It controls whether txid is used as a hash key. Default is 'false'. If true, the pg_show_plan function can efficiently process the GC, however, it has the side effect of consuming txid whenever execute a query, even if it doesn't really need it like SELECT 1. This was introduced to be used when trying to reproduce past behavior. Therefore, it is not recommended to set this true.
 

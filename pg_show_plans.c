@@ -859,117 +859,126 @@ pg_show_plans(PG_FUNCTION_ARGS)
 
 	/* Get shared lock, and iterate over the hashtable entries */
 	LWLockAcquire(pgsp->lock, LW_SHARED);
-
-	hash_seq_init(&hash_seq, pgsp_hash);
-	while ((entry = hash_seq_search(&hash_seq)) != NULL)
+	PG_TRY();
 	{
-		Datum		values[PG_SHOW_PLANS_COLS];
-		bool		nulls[PG_SHOW_PLANS_COLS];
-		int			i = 0;
-
-		/*
-		 * Delete stored plans which the corresponding SQL statements have
-		 * been already committed or aborted.
-		 *
-		 * These garbage plans occur when the corresponding SQL statement is
-		 * canceled or the executed process crashes.
-		 */
-		if (!RecoveryInProgress() && pgsp_enable_txid)
+		hash_seq_init(&hash_seq, pgsp_hash);
+		while ((entry = hash_seq_search(&hash_seq)) != NULL)
 		{
-			if (TransactionIdDidCommit(entry->topxid)
-				|| TransactionIdDidAbort(entry->topxid))
-			{
-				LWLockRelease(pgsp->lock);
+			Datum		values[PG_SHOW_PLANS_COLS];
+			bool		nulls[PG_SHOW_PLANS_COLS];
+			int			i = 0;
 
-				LWLockAcquire(pgsp->lock, LW_EXCLUSIVE);
-				hash_search(pgsp_hash, &entry->key, HASH_REMOVE, NULL);
-				LWLockRelease(pgsp->lock);
-
-				LWLockAcquire(pgsp->lock, LW_SHARED);
-
-				continue;
-			}
-		}
-		else
-		{
 			/*
-			 * In recovery mode or if pg_enable_txid is false, we cannot use
-			 * txid. Therefore, we check whether the pid of the entry is still
-			 * running and the state of the pid is active in each entry.
+			 * Delete stored plans which the corresponding SQL statements have
+			 * been already committed or aborted.
 			 *
-			 * If the pid of the entry does not already exist, the entry has
-			 * to be removed. And the pid of the entry still exists but the
-			 * state of the pid is not active, we have to also remove the
-			 * entry because it is a garbege plan created by canceling the
-			 * previous transaction.
-			 *
-			 * This part is not efficient because of a for-loop, however, we
-			 * do not care about it because this function is not often
-			 * executed.
+			 * These garbage plans occur when the corresponding SQL statement
+			 * is canceled or the executed process crashes.
 			 */
-			int			num_backends = pgstat_fetch_stat_numbackends();
-			int			curr_backend;
-			uint32		pid = (uint32) entry->topxid;
-			bool		exists = false;
-
-			for (curr_backend = 1; curr_backend <= num_backends; curr_backend++)
+			if (!RecoveryInProgress() && pgsp_enable_txid)
 			{
-				LocalPgBackendStatus *local_beentry;
-				PgBackendStatus *beentry;
-
-				local_beentry = pgstat_fetch_stat_local_beentry(curr_backend);
-				beentry = &local_beentry->backendStatus;
-				if (beentry->st_procpid == pid && beentry->st_state == STATE_RUNNING)
+				if (TransactionIdDidCommit(entry->topxid)
+					|| TransactionIdDidAbort(entry->topxid))
 				{
-					exists = true;
-					break;
+					LWLockRelease(pgsp->lock);
+
+					LWLockAcquire(pgsp->lock, LW_EXCLUSIVE);
+					hash_search(pgsp_hash, &entry->key, HASH_REMOVE, NULL);
+					LWLockRelease(pgsp->lock);
+
+					LWLockAcquire(pgsp->lock, LW_SHARED);
+
+					continue;
+				}
+			}
+			else
+			{
+				/*
+				 * In recovery mode or if pg_enable_txid is false, we cannot
+				 * use txid. Therefore, we check whether the pid of the entry
+				 * is still running and the state of the pid is active in each
+				 * entry.
+				 *
+				 * If the pid of the entry does not already exist, the entry
+				 * has to be removed. And the pid of the entry still exists
+				 * but the state of the pid is not active, we have to also
+				 * remove the entry because it is a garbege plan created by
+				 * canceling the previous transaction.
+				 *
+				 * This part is not efficient because of a for-loop, however,
+				 * we do not care about it because this function is not often
+				 * executed.
+				 */
+				int			num_backends = pgstat_fetch_stat_numbackends();
+				int			curr_backend;
+				uint32		pid = (uint32) entry->topxid;
+				bool		exists = false;
+
+				for (curr_backend = 1; curr_backend <= num_backends; curr_backend++)
+				{
+					LocalPgBackendStatus *local_beentry;
+					PgBackendStatus *beentry;
+
+					local_beentry = pgstat_fetch_stat_local_beentry(curr_backend);
+					beentry = &local_beentry->backendStatus;
+					if (beentry->st_procpid == pid && beentry->st_state == STATE_RUNNING)
+					{
+						exists = true;
+						break;
+					}
+				}
+
+				if (!exists)
+				{
+					LWLockRelease(pgsp->lock);
+
+					LWLockAcquire(pgsp->lock, LW_EXCLUSIVE);
+					hash_search(pgsp_hash, &entry->key, HASH_REMOVE, NULL);
+					LWLockRelease(pgsp->lock);
+
+					LWLockAcquire(pgsp->lock, LW_SHARED);
+
+					continue;
 				}
 			}
 
-			if (!exists)
+			/* Set values */
+			memset(values, 0, sizeof(values));
+			memset(nulls, 0, sizeof(nulls));
+
+			values[i++] = ObjectIdGetDatum(entry->key.pid);
+			values[i++] = ObjectIdGetDatum(entry->key.nested_level);
+			values[i++] = ObjectIdGetDatum(entry->userid);
+			values[i++] = ObjectIdGetDatum(entry->dbid);
+
+			if (is_allowed_role || entry->userid == userid)
 			{
-				LWLockRelease(pgsp->lock);
+				char	   *pstr = entry->plan;
 
-				LWLockAcquire(pgsp->lock, LW_EXCLUSIVE);
-				hash_search(pgsp_hash, &entry->key, HASH_REMOVE, NULL);
-				LWLockRelease(pgsp->lock);
+				values[i++]
+					= CStringGetTextDatum((char *) pg_do_encoding_conversion(
+																			 (unsigned char *) pstr,
+																			 entry->plan_len,
+																			 entry->encoding,
+																			 GetDatabaseEncoding()));
 
-				LWLockAcquire(pgsp->lock, LW_SHARED);
-
-				continue;
+				if (pstr != entry->plan)
+					pfree(pstr);
 			}
+			else
+			{
+				values[i++] = CStringGetTextDatum("<insufficient privilege>");
+			}
+
+			tuplestore_putvalues(tupstore, tupdesc, values, nulls);
 		}
-
-		/* Set values */
-		memset(values, 0, sizeof(values));
-		memset(nulls, 0, sizeof(nulls));
-
-		values[i++] = ObjectIdGetDatum(entry->key.pid);
-		values[i++] = ObjectIdGetDatum(entry->key.nested_level);
-		values[i++] = ObjectIdGetDatum(entry->userid);
-		values[i++] = ObjectIdGetDatum(entry->dbid);
-
-		if (is_allowed_role || entry->userid == userid)
-		{
-			char	   *pstr = entry->plan;
-
-			values[i++]
-				= CStringGetTextDatum((char *) pg_do_encoding_conversion(
-																		 (unsigned char *) pstr,
-																		 entry->plan_len,
-																		 entry->encoding,
-																		 GetDatabaseEncoding()));
-
-			if (pstr != entry->plan)
-				pfree(pstr);
-		}
-		else
-		{
-			values[i++] = CStringGetTextDatum("<insufficient privilege>");
-		}
-
-		tuplestore_putvalues(tupstore, tupdesc, values, nulls);
 	}
+	PG_CATCH();
+	{
+		if (LWLockHeldByMe(pgsp->lock))
+			LWLockRelease(pgsp->lock);
+	}
+	PG_END_TRY();
 
 	LWLockRelease(pgsp->lock);
 

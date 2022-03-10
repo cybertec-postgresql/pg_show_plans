@@ -3,8 +3,8 @@
  * pg_show_plans.c
  *		Show query plans of all currently running SQL statements
  *
- * Copyright (c) 2008-2019, PostgreSQL Global Development Group
- * Copyright (c) 2019-2021, Cybertec Schönig & Schönig GmbH
+ * Copyright (c) 2008-2022, PostgreSQL Global Development Group
+ * Copyright (c) 2019-2022, Cybertec Schönig & Schönig GmbH
  *
  *-------------------------------------------------------------------------
  */
@@ -712,6 +712,12 @@ set_state(bool state)
 {
 	bool		is_allowed_role = false;
 
+	/* Safety check... */
+	if (!pgsp || !pgsp_hash)
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("pg_show_plans must be loaded via shared_preload_libraries")));
+
 	/* Superusers or members of pg_read_all_stats members are allowed */
 #if PG_VERSION_NUM >= 140000
 	is_allowed_role = is_member_of_role(GetUserId(), ROLE_PG_READ_ALL_STATS);
@@ -754,6 +760,12 @@ static void
 set_format(int format)
 {
 	bool		is_allowed_role = false;
+
+	/* Safety check... */
+	if (!pgsp || !pgsp_hash)
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("pg_show_plans must be loaded via shared_preload_libraries")));
 
 	/* Superusers or members of pg_read_all_stats members are allowed */
 #if PG_VERSION_NUM >= 140000

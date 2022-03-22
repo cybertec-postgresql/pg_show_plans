@@ -12,7 +12,7 @@ The hashtable size cannot be changed, so the plans are not stored if the hashtab
 
 ## Version
 
-*Version 1.0 RC 4*
+*Version 1.0*
 
 ## Installation
 
@@ -103,36 +103,13 @@ query |
 
 ## Configuration Parameters
  - *pg_show_plans.plan_format* : It controls the output format of query plans. It can be selected either `text` or `json`. Default is `text`.
- - *pg_show_plans.max_plan_length* : It sets the maximum length of query plans. Default is `8192` [byte]. Note that this parameter must be set to an integer. Note that pg_show plans allocates approximately (max_plan_length * max_connecions * 5) bytes on the shared memory to store plans, Therefore, if the value of max_plan_length is too large, PostgreSQL may not start due to an out of memory error.
- - *pg_show_plans.enable* : It controls whether this feature is enabled or not in each user. Default is 'true'. See also the Workaround section shown below.
- - *pg_show_plans.enable_txid* : It controls whether txid is used as a hash key. Default is 'false'. If true, the pg_show_plan function can efficiently process the GC, however, it has the side effect of consuming txid whenever execute a query, even if it doesn't really need it like SELECT 1. This was introduced to be used when trying to reproduce past behavior. Therefore, it is not recommended to set this true.
-
-## Workaround
-The pg_create_logical_replication_slot() function, which is used to create a logical replication slot, returns error in default setting because the CreateInitDecodingContext() function invoked by this function and the GetTopTransactionId() function invoked by this module make a conflict.
-
-```
-postgres=# SELECT pg_create_logical_replication_slot('myslot', 'pgoutput');
-ERROR:  cannot create logical replication slot in transaction that has performed writes
-```
-
-In this case, the parameter pg_show_plans.enable can be used to avoid the conflict.
-
-```
-postgres=# set pg_show_plans.enable = off;
-SET
-postgres=# SELECT pg_create_logical_replication_slot('myslot', 'pgoutput');
- pg_create_logical_replication_slot
-------------------------------------
- (myslot,0/1572F90)
-(1 row)
-
-postgres=# SET pg_show_plans.enable = on;
-SET
-```
-Currently, only this function has been confirmed to occur in this conflict.
+ - *pg_show_plans.max_plan_length* : It sets the maximum length of query plans. Default is `16384` [byte]. Note that this parameter must be set to an integer. Note that pg_show plans allocates approximately (max_plan_length * max_connecions) bytes on the shared memory to store plans, Therefore, if the value of max_plan_length is too large, PostgreSQL may not start due to an out of memory error.
+ - *pg_show_plans.enable* : It controls whether this feature is enabled or not in each user. Default is 'true'.
 
 
 ## Change Log
+ - 22 Mar, 2022: Version 1.0 Released.
+ - 22 Mar, 2022: Improved memory utilization efficiency and obsoleted a parameter:pg_show_plans.enable_txid.
  - 30 Aug, 2021: Added a parameter:pg_show_plans.enable_txid.
  - 4 Feb, 2021: Added a parameter:pg_show_plans.enable.
  - 19 Oct, 2020: Confirmed this can be run on PostgreSQL 13.0.

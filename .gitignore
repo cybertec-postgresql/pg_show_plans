@@ -1,0 +1,9 @@
+# Clangd
+.cache/
+.clangd
+compile_commands.json
+
+# Build Output
+*.bc
+*.o
+*.so

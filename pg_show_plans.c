@@ -83,6 +83,9 @@ static bool pgsp_enable;		/* Whether the plan can be shown */
 static bool pgsp_enable_txid;	/* For backward compatibility. */
 
 /* Saved hook values in case of unload */
+#if PG_VERSION_NUM >= 150000
+static shmem_request_hook_type prev_shmem_request_hook = NULL;
+#endif
 static shmem_startup_hook_type prev_shmem_startup_hook = NULL;
 static ExecutorStart_hook_type prev_ExecutorStart = NULL;
 static ExecutorRun_hook_type prev_ExecutorRun = NULL;
@@ -127,6 +130,9 @@ PG_FUNCTION_INFO_V1(pg_show_plans_disable);
 PG_FUNCTION_INFO_V1(pgsp_format_json);
 PG_FUNCTION_INFO_V1(pgsp_format_text);
 
+#if PG_VERSION_NUM >= 150000
+static void pgsp_shmem_request(void);
+#endif
 static Size pgsp_memsize(void);
 static void pgsp_shmem_startup(void);
 static void pgsp_shmem_shutdown(int code, Datum arg);
@@ -214,8 +220,15 @@ _PG_init(void)
 
 	EmitWarningsOnPlaceholders("pg_show_plans");
 
+#if PG_VERSION_NUM >= 150000
+	prev_shmem_request_hook = shmem_request_hook;
+	shmem_request_hook = pgsp_shmem_request;
+#else
 	RequestAddinShmemSpace(pgsp_memsize());
-#if PG_VERSION_NUM >= 90600
+#endif
+
+#if PG_VERSION_NUM >= 150000
+#elif PG_VERSION_NUM >= 90600
 	RequestNamedLWLockTranche("pg_show_plans", 1);
 #else
 	RequestAddinLWLocks(1);
@@ -623,6 +636,21 @@ store_plan_into_entry(pgspEntry * entry, const int nested_level,
 	entry->terminalByte[nested_level] = entry->plan_len;
 	entry->nestedLevel = nested_level;
 }
+
+#if (PG_VERSION_NUM >= 150000)
+/*
+ * Requests any additional shared memory required for our extension
+ */
+static void
+pgsp_shmem_request(void)
+{
+	if (prev_shmem_request_hook)
+		prev_shmem_request_hook();
+
+	RequestAddinShmemSpace(pgsp_memsize());
+	RequestNamedLWLockTranche("pg_show_plans", 1);
+}
+#endif
 
 /*
  * Estimate shared memory space needed.

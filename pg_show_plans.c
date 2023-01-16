@@ -137,14 +137,7 @@ static Size pgsp_memsize(void);
 static void pgsp_shmem_startup(void);
 static void pgsp_shmem_shutdown(int code, Datum arg);
 static void pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags);
-static void pgsp_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction,
-#if PG_VERSION_NUM >= 100000
-							 uint64 count, bool execute_once);
-#elif PG_VERSION_NUM >= 90600
-							 uint64 count);
-#else
-							 long count);
-#endif
+static void pgsp_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction, uint64 count, bool execute_once);
 static void pgsp_ExecutorFinish(QueryDesc *queryDesc);
 static void pgsp_ExecutorEnd(QueryDesc *queryDesc);
 
@@ -225,13 +218,7 @@ _PG_init(void)
 	shmem_request_hook = pgsp_shmem_request;
 #else
 	RequestAddinShmemSpace(pgsp_memsize());
-#endif
-
-#if PG_VERSION_NUM >= 150000
-#elif PG_VERSION_NUM >= 90600
 	RequestNamedLWLockTranche("pg_show_plans", 1);
-#else
-	RequestAddinLWLocks(1);
 #endif
 
 	/* Install hooks. */
@@ -286,11 +273,7 @@ pgsp_shmem_startup(void)
 	if (!found)
 	{
 		/* First time through ... */
-#if PG_VERSION_NUM >= 90600
 		pgsp->lock = &(GetNamedLWLockTranche("pg_show_plans"))->lock;
-#else
-		pgsp->lock = LWLockAssign();
-#endif
 		SpinLockInit(&pgsp->elock);
 	}
 
@@ -406,31 +389,15 @@ pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags)
 /*
  * ExecutorRun hook: all we need do is show nesting depth
  */
-static void
-			pgsp_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction,
-#if PG_VERSION_NUM >= 100000
-							 uint64 count, bool execute_once)
-#elif PG_VERSION_NUM >= 90600
-							 uint64 count)
-#else
-							 long count)
-#endif
+static void pgsp_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction, uint64 count, bool execute_once)
 {
 	nested_level++;
 	PG_TRY();
 	{
 		if (prev_ExecutorRun)
-#if PG_VERSION_NUM >= 100000
 			prev_ExecutorRun(queryDesc, direction, count, execute_once);
-#else
-			prev_ExecutorRun(queryDesc, direction, count);
-#endif
 		else
-#if PG_VERSION_NUM >= 100000
 			standard_ExecutorRun(queryDesc, direction, count, execute_once);
-#else
-			standard_ExecutorRun(queryDesc, direction, count);
-#endif
 		nested_level--;
 	}
 	PG_CATCH();
@@ -760,10 +727,8 @@ set_state(const bool state)
 	/* Superusers or members of pg_read_all_stats members are allowed */
 #if PG_VERSION_NUM >= 140000
 	is_allowed_role = is_member_of_role(GetUserId(), ROLE_PG_READ_ALL_STATS);
-#elif PG_VERSION_NUM >= 100000
-	is_allowed_role = is_member_of_role(GetUserId(), DEFAULT_ROLE_READ_ALL_STATS);
 #else
-	is_allowed_role = superuser();
+	is_allowed_role = is_member_of_role(GetUserId(), DEFAULT_ROLE_READ_ALL_STATS);
 #endif
 
 	if (is_allowed_role)
@@ -808,10 +773,8 @@ set_format(int format)
 	/* Superusers or members of pg_read_all_stats members are allowed */
 #if PG_VERSION_NUM >= 140000
 	is_allowed_role = is_member_of_role(GetUserId(), ROLE_PG_READ_ALL_STATS);
-#elif PG_VERSION_NUM >= 100000
-	is_allowed_role = is_member_of_role(GetUserId(), DEFAULT_ROLE_READ_ALL_STATS);
 #else
-	is_allowed_role = superuser();
+	is_allowed_role = is_member_of_role(GetUserId(), DEFAULT_ROLE_READ_ALL_STATS);
 #endif
 
 	if (is_allowed_role)
@@ -858,10 +821,8 @@ pg_show_plans(PG_FUNCTION_ARGS)
 	/* Superusers or members of pg_read_all_stats members are allowed */
 #if PG_VERSION_NUM >= 140000
 	is_allowed_role = is_member_of_role(GetUserId(), ROLE_PG_READ_ALL_STATS);
-#elif PG_VERSION_NUM >= 100000
-	is_allowed_role = is_member_of_role(GetUserId(), DEFAULT_ROLE_READ_ALL_STATS);
 #else
-	is_allowed_role = superuser();
+	is_allowed_role = is_member_of_role(GetUserId(), DEFAULT_ROLE_READ_ALL_STATS);
 #endif
 
 	/* hash table must exist already */

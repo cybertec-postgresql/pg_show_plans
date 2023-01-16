@@ -116,7 +116,6 @@ static const struct config_enum_entry plan_formats[] =
  * Function declarations
  */
 void		_PG_init(void);
-void		_PG_fini(void);
 
 Datum		pg_show_plans(PG_FUNCTION_ARGS);
 Datum		pg_show_plans_enable(PG_FUNCTION_ARGS);
@@ -236,17 +235,6 @@ _PG_init(void)
 
 	prev_ExecutorEnd = ExecutorEnd_hook;
 	ExecutorEnd_hook = pgsp_ExecutorEnd;
-}
-
-void
-_PG_fini(void)
-{
-	/* Uninstall hooks. */
-	shmem_startup_hook = prev_shmem_startup_hook;
-	ExecutorStart_hook = prev_ExecutorStart;
-	ExecutorRun_hook = prev_ExecutorRun;
-	ExecutorFinish_hook = prev_ExecutorFinish;
-	ExecutorEnd_hook = prev_ExecutorEnd;
 }
 
 /*

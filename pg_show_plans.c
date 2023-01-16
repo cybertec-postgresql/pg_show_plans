@@ -4,7 +4,7 @@
  *		Show query plans of all currently running SQL statements
  *
  * Copyright (c) 2008-2022, PostgreSQL Global Development Group
- * Copyright (c) 2019-2022, Cybertec Schönig & Schönig GmbH
+ * Copyright (c) 2019-2023, CYBERTEC PostgreSQL International GmbH
  *
  *-------------------------------------------------------------------------
  */

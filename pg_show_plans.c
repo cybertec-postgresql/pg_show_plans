@@ -9,6 +9,11 @@
  *-------------------------------------------------------------------------
  */
 #include "postgres.h"
+
+#if PG_VERSION_NUM < 110000
+#error "Unsupported PostgreSQL Version"
+#endif
+
 #include <unistd.h>
 #include <dlfcn.h>
 

@@ -263,11 +263,12 @@ pgsp_shmem_startup(void)
 		/* First time through ... */
 		pgsp->lock = &(GetNamedLWLockTranche("pg_show_plans"))->lock;
 		SpinLockInit(&pgsp->elock);
+
+		/* Set the initial value for is_enable. */
+		pgsp->is_enable = true;
+		pgsp->plan_format = plan_format;
 	}
 
-	/* Set the initial value to is_enable */
-	pgsp->is_enable = true;
-	pgsp->plan_format = plan_format;
 
 	/* Be sure everyone agrees on the hash table entry size */
 	memset(&info, 0, sizeof(info));

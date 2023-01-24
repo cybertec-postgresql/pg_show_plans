@@ -1,50 +1,66 @@
 # pg_show_plans
 
-`pg_show_plans` is a module which shows the query plans of all currently running SQL statements.
+PostgreSQL extension that shows query plans of all the currently running SQL
+statements.
 
-You can select the output format of plans: TEXT or JSON.
+Plan output format can either be plain TEXT (default), or JSON.
 
-This module supports PostgreSQL versions from 9.5 to 14.
+### NOTE
 
-### Note
-When the server starts, pg_show_plans makes a hashtable  on the shared-memory in order to temporarily store query plans.
-The hashtable size cannot be changed, so the plans are not stored if the hashtable is full.
+This extension creates a hash table within shared memory. The hash table is not
+resizable, thus, no new plans can be added if it is filled up.
 
-## Version
+# INSTALL
 
-*Version 1.0*
+There are several ways of doing it...
 
-## Installation
-
-You can install it to do the usual way shown below.
+## Using `pg_confg` (recommended):
 
 ```
-$ tar xvfj postgresql-13.0.tar.bz2
-$ cd postgresql-13.0/contrib
-$ git clone https://github.com/cybertec-postgresql/pg_show_plans.git
-$ cd pg_show_plans
-$ make && make install
+git clone https://github.com/cybertec-postgresql/pg_show_plans.git
+cd pg_show_plans
+USE_PGXS=true # `pg_config` binary must be in your $PATH (install Postgres).
+make
+make install
 ```
 
-You must add the line shown below in your postgresql.conf.
+## Within PostgreSQL source tree
 
 ```
-shared_preload_libraries = 'pg_show_plans'
+export PG_VER='15.1' # Export the required PostgreSQL version.
+curl -O "https://download.postgresql.org/pub/source/v${PG_VER}/postgresql-${PG_VER}.tar.bz2"
+tar xvfj "postgresql-${PG_VER}.tar.bz2"
+cd postgresql-${PG_VER}
+./configure
+
+cd contrib
+git clone https://github.com/cybertec-postgresql/pg_show_plans.git
+cd pg_show_plans
+make
+make install
 ```
 
-After starting your server, you must issue `CREATE EXTENSION` statement shown below.
+# USAGE
+
+Add `pg_show_plans` to `shared_preload_libraries` within `postgresql.conf`:
 
 ```
-testdb=# CREATE EXTENSION pg_show_plans;
+shared_preload_libraries = 'pg_show_plans' # Like that.
 ```
 
-## How to use
+Start the server, and invoke `CREATE EXTENSION pg_show_plans;`:
 
-By issuing the following query, it shows the query plan and related information of the currently running SQL statements.
+```
+postgresql=# CREATE EXTENSION pg_show_plans; # Like that.
+CREATE EXTENSION
+postgresql=#
+```
+
+To get the query plans along with relevant information...
 
 ```
 testdb=# SELECT * FROM pg_show_plans;
-  pid  | level | userid | dbid  |                                 plan                                  
+  pid  | level | userid | dbid  |                                 plan
 -------+-------+--------+-------+-----------------------------------------------------------------------
  11473 |     0 |     10 | 16384 | Function Scan on pg_show_plans  (cost=0.00..10.00 rows=1000 width=56)
  11504 |     0 |     10 | 16384 | Function Scan on print_item  (cost=0.25..10.25 rows=1000 width=524)
@@ -52,7 +68,7 @@ testdb=# SELECT * FROM pg_show_plans;
 (3 rows)
 ```
 
-If you need the query plans of running SQL statements and also the corresponding query string, you issue the following query which is combined with pg_show_plans and pg_stat_activity.
+To get the plans and see the corresponding query expression, issue...
 
 ```
 testdb=# \x
@@ -83,38 +99,56 @@ query | SELECT * FROM print_item(1,20);
 pid   | 11517
 level | 1
 plan  | Result  (cost=0.00..0.01 rows=1 width=4)
-query | 
+query |
 
 ```
 
-
-## pg_show_plans View
- - *pid*: the pid of the process which the query is running.    
- - *level*: the level of the query which runs the query. Top level is `0`. For example, if you execute a simple select query, the level of this query's plan is 0. If you execute a function that invokes a select query, level 0 is the plan of the function and level 1 is the plan of the select query invoked by the function.
+# pg_show_plans VIEW
+ - *pid*: the pid of the process which the query is running.
+ - *level*: the level of the query which runs the query. Top level is `0`. For
+   example, if you execute a simple select query, the level of this query's
+   plan is 0. If you execute a function that invokes a select query, level 0 is
+   the plan of the function and level 1 is the plan of the select query invoked
+   by the function.
  - *userid*: the userid of the user which runs the query.
  - *dbid*: the database id of the database which the query is running.
  - *plan*: the query plan of the running query.
 
-## Functions
- - *pg_show_plans_disable()* disables the feature. Only superuser can execute it.
+# FUNCTIONs
+ - *pg_show_plans_disable()* disables the feature. Only superuser can execute
+   it.
  - *pg_show_plans_enable()* enables the feature. Only superuser can execute it.
- - *pgsp_format_json()* changes the output format to `json`. Note that the format of the plans that are stored in the memory before executing this function cannot be changed.
- - *pgsp_format_text()* changes the output format to `text`. Note that the format of the plans that are stored in the memory before executing this function cannot be changed.
+ - *pgsp_format_json()* changes the output format to `json`. Note that the
+   format of the plans that are stored in the memory before executing this
+   function cannot be changed.
+ - *pgsp_format_text()* changes the output format to `text`. Note that the
+   format of the plans that are stored in the memory before executing this
+   function cannot be changed.
 
-## Configuration Parameters
- - *pg_show_plans.plan_format* : It controls the output format of query plans. It can be selected either `text` or `json`. Default is `text`.
- - *pg_show_plans.max_plan_length* : It sets the maximum length of query plans. Default is `16384` [byte]. Note that this parameter must be set to an integer. Note that pg_show plans allocates approximately (max_plan_length * max_connecions) bytes on the shared memory to store plans, Therefore, if the value of max_plan_length is too large, PostgreSQL may not start due to an out of memory error.
- - *pg_show_plans.enable* : It controls whether this feature is enabled or not in each user. Default is 'true'.
+# CONFIGURATION
+ - *pg_show_plans.plan_format* : It controls the output format of query plans.
+   It can be selected either `text` or `json`. Default is `text`.
+ - *pg_show_plans.max_plan_length* : It sets the maximum length of query plans.
+   Default is `16384` [byte]. Note that this parameter must be set to an
+   integer. Note that pg_show plans allocates approximately (max_plan_length *
+   max_connecions) bytes on the shared memory to store plans, Therefore, if the
+   value of max_plan_length is too large, PostgreSQL may not start due to an
+   out of memory error.
+ - *pg_show_plans.enable* : It controls whether this feature is enabled or not
+   in each user. Default is 'true'.
 
+# CHANGELOG
 
-## Change Log
  - 22 Mar, 2022: Version 1.0 Released.
- - 22 Mar, 2022: Improved memory utilization efficiency and obsoleted a parameter:pg_show_plans.enable_txid.
+ - 22 Mar, 2022: Improved memory utilization efficiency and obsoleted a
+   parameter:pg_show_plans.enable_txid.
  - 30 Aug, 2021: Added a parameter:pg_show_plans.enable_txid.
  - 4 Feb, 2021: Added a parameter:pg_show_plans.enable.
  - 19 Oct, 2020: Confirmed this can be run on PostgreSQL 13.0.
- - 10 Apr, 2020: Version 1.0 RC3 Released. Supported Streaming Replication. This extension can be run on the standby server since this version.
- - 26 Mar, 2020: Version 1.0 RC2 Released. Added pgsp_format_json() and pgsp_format_text(); deleted the parameter `show_level`.
+ - 10 Apr, 2020: Version 1.0 RC3 Released. Supported Streaming Replication.
+   This extension can be run on the standby server since this version.
+ - 26 Mar, 2020: Version 1.0 RC2 Released. Added pgsp_format_json() and
+   pgsp_format_text(); deleted the parameter `show_level`.
  - 21 Dec, 2019: Version 1.0 RC Released. Supported versions from 9.1 to 9.4.
  - 16 Aug, 2019: Version 0.8 Released. Supported the parameter:max_plan_length.
  - 12 Aug, 2019: Version 0.3 Released. Supported garbage collection.

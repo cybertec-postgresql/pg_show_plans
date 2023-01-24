@@ -8,7 +8,7 @@ Plan output format can either be plain TEXT (default), or JSON.
 ### NOTE
 
 This extension creates a hash table within shared memory. The hash table is not
-resizable, thus, no new plans can be added if it is filled up.
+resizable, thus, no new plans can be added once it has been filled up.
 
 # INSTALL
 
@@ -24,7 +24,7 @@ make
 make install
 ```
 
-## Within PostgreSQL source tree
+## Within PostgreSQL source tree:
 
 ```
 export PG_VER='15.1' # Export the required PostgreSQL version.
@@ -56,7 +56,7 @@ CREATE EXTENSION
 postgresql=#
 ```
 
-To get the query plans along with relevant information...
+To get the query plans along with relevant information:
 
 ```
 testdb=# SELECT * FROM pg_show_plans;
@@ -68,14 +68,15 @@ testdb=# SELECT * FROM pg_show_plans;
 (3 rows)
 ```
 
-To get the plans and see the corresponding query expression, issue...
+To get the plans and see the corresponding query expression:
 
 ```
 testdb=# \x
 Expanded display is on.
-testdb=# SELECT p.pid, p.level, p.plan, a.query FROM pg_show_plans p 
-   LEFT JOIN pg_stat_activity a
-   ON p.pid = a.pid AND p.level = 0 ORDER BY p.pid, p.level;
+testdb=# SELECT p.pid, p.level, p.plan, a.query
+         FROM pg_show_plans p
+         LEFT JOIN pg_stat_activity a
+         ON p.pid = a.pid AND p.level = 0 ORDER BY p.pid, p.level;
 -[ RECORD 1 ]-----------------------------------------------------------------------------------------
 pid   | 11473
 level | 0

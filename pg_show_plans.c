@@ -14,26 +14,17 @@
 #error "Unsupported PostgreSQL Version"
 #endif
 
-#include <unistd.h>
-#include <dlfcn.h>
-
-#include "access/hash.h"
-#include "access/transam.h"
-#include "access/xact.h"
-#include "access/xlog.h"
 #include "catalog/pg_authid.h"
+#include "commands/explain.h"
 #include "funcapi.h"
 #include "mb/pg_wchar.h"
-#include "miscadmin.h"
+#include "pgstat.h"
 #include "storage/ipc.h"
 #include "storage/lwlock.h"
-#include "storage/spin.h"
 #include "storage/shmem.h"
 #include "tcop/utility.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
-#include "commands/explain.h"
-#include "pgstat.h"
 
 PG_MODULE_MAGIC;
 

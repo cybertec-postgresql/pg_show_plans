@@ -85,7 +85,6 @@ static int	pgsp_max;			/* max plans to show */
 static int	plan_format;		/* output format */
 static int	max_plan_length;	/* max length of query plan */
 static bool pgsp_enable;		/* Whether the plan can be shown */
-static bool pgsp_enable_txid;	/* For backward compatibility. */
 
 /* Saved hook values in case of unload */
 #if PG_VERSION_NUM >= 150000
@@ -199,17 +198,6 @@ _PG_init(void)
 							 PLAN_FORMAT_TEXT,
 							 plan_formats,
 							 PGC_POSTMASTER,
-							 0,
-							 NULL,
-							 NULL,
-							 NULL);
-
-	DefineCustomBoolVariable("pg_show_plans.enable_txid",
-							 "(Obsoleted) Whether txid is used as a hash key.",
-							 "This has been obsoleted and remains for backward compatibility.",
-							 &pgsp_enable_txid,
-							 false,
-							 PGC_USERSET,
 							 0,
 							 NULL,
 							 NULL,

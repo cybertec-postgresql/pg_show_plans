@@ -418,7 +418,8 @@ pgsp_ExecutorEnd(QueryDesc *queryDesc)
 		if (pgsp->is_enable)
 		{
 			SpinLockRelease(&pgsp->elock);
-			delete_entry(MyProcPid);
+			if (nested_level < 1)
+				delete_entry(MyProcPid);
 		}
 		else
 			SpinLockRelease(&pgsp->elock);

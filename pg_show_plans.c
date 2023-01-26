@@ -371,11 +371,9 @@ static void pgsp_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction, uint
 			prev_ExecutorRun(queryDesc, direction, count, execute_once);
 		else
 			standard_ExecutorRun(queryDesc, direction, count, execute_once);
-		nested_level--;
 	}
 	PG_CATCH();
 	{
-		nested_level--;
 		PG_RE_THROW();
 	}
 	PG_END_TRY();
@@ -387,7 +385,6 @@ static void pgsp_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction, uint
 static void
 pgsp_ExecutorFinish(QueryDesc *queryDesc)
 {
-	nested_level++;
 	PG_TRY();
 	{
 		if (prev_ExecutorFinish)

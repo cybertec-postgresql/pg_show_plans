@@ -249,7 +249,7 @@ pgsp_shmem_startup(void)
 		SpinLockInit(&pgsp->elock);
 
 		/* Set the initial value for is_enable. */
-		pgsp->is_enable = true;
+		pgsp->is_enable = pgsp_enable;
 		pgsp->plan_format = plan_format;
 	}
 

@@ -8,11 +8,9 @@
  *
  *-------------------------------------------------------------------------
  */
-#include "postgres.h"
 
-#if PG_VERSION_NUM < 110000
-#error "Unsupported PostgreSQL Version"
-#endif
+/* Includes */
+#include "postgres.h" /* It is a PostgreSQL extension. */
 
 #include "catalog/pg_authid.h"
 #include "commands/explain.h"
@@ -26,80 +24,144 @@
 #include "utils/acl.h"
 #include "utils/builtins.h"
 
-PG_MODULE_MAGIC;
+/* Constants and Macros */
+PG_MODULE_MAGIC; /* Must be here. */
 
-/*
- * Define constant
- */
-#define MAX_NESTED_LEVEL         10 /* MAX_NESTED_LEVEL plan can be stored in
-									 * hash entry */
+/* Instantly abort compilation against obsolete PostgreSQL. */
+#if PG_VERSION_NUM < 110000
+#error "Unsupported PostgreSQL Version"
+#endif
 
-/*
- * Define data types
- */
-typedef struct pgspHashKey
+#define MAX_NESTED_LEVEL   10 /* Maximal plan nest level. */
+#define PG_SHOW_PLANS_COLS 5  /* Plan table columns. */
+
+/* Typedefs */
+typedef struct pgspHashKey /* A hash key for pgspEntry. */
 {
-	pid_t		pid;
-}			pgspHashKey;
+	pid_t pid;
+} pgspHashKey;
 
-typedef struct pgspEntry
+typedef struct pgspEntry /* A query plan. */
 {
-	pgspHashKey key;			/* hash key of entry - MUST BE FIRST */
-	Oid			userid;			/* user OID */
-	Oid			dbid;			/* database OID */
-	int			encoding;		/* query encoding */
-	int			plan_len;		/* # of valid bytes in query string */
-	slock_t		mutex;			/* protects the entry */
-	pid_t		pid;			/* it is used for the hash key */
-	int			terminalByte[MAX_NESTED_LEVEL]; /* Refer to the comment of
-												 * entry_store() */
-	bool		isSnipped[MAX_NESTED_LEVEL];	/* whether plan in each
-												 * nested_level is snipped */
-	int			nestedLevel;	/* max nested_level of this query */
-	char		plan[0];		/* query plan string */
-}			pgspEntry;
+	pgspHashKey key; /* Hash key of an entry, must be first. */
+	Oid userid;      /* User OID. */
+	Oid dbid;        /* Database OID. */
+	int encoding;    /* Query encoding. */
+	int plan_len;    /* See store_entry() comment. */
+	slock_t mutex;   /* Protects the entry. */
+	pid_t pid;       /* Used for the hash key. */
+	int terminalByte[MAX_NESTED_LEVEL]; /* See entry_store() comment. */
+	bool isSnipped[MAX_NESTED_LEVEL];   /* Whether a plan has been snipped. */
+	int nestedLevel; /* Max nested_level of this query. */
+	char plan[0];    /* Query plan string. */
+} pgspEntry;
 
-/* Global shared state */
-typedef struct pgspSharedState
+typedef struct pgspSharedState /* Global extension shared state. */
 {
-	LWLock	   *lock;			/* protects hashtable search/modification */
-	bool		is_enable;		/* Whether to enable the feature or not */
-	int			plan_format;	/* plan format */
-	slock_t		elock;			/* protects the variable `is_enable` and
-								 * `plan_format` */
-}			pgspSharedState;
+	LWLock *lock;    /* Protects hashtable search/modification. */
+	slock_t elock;   /* Protects the following variables. */
+	bool is_enable;  /* Whether to store new plans or not. */
+	int plan_format; /* Plan format, either plain TEXT or JSON. */
+} pgspSharedState;
 
-/* Static variables */
-static int	nested_level = 0;	/* Current nesting depth of
-								 * ExecutorRun+ProcessUtility calls */
-static int	pgsp_max;			/* max plans to show */
-static int	plan_format;		/* output format */
-static int	max_plan_length;	/* max length of query plan */
-static bool pgsp_enable;		/* Whether the plan can be shown */
+typedef enum /* For GUC variables. */
+{
+	PLAN_FORMAT_TEXT,
+	PLAN_FORMAT_JSON
+} pgspPlanFormats;
 
-/* Saved hook values in case of unload */
+/* Function Prototypes. */
+/* Show plans of all currently running queries. */
+Datum pg_show_plans(PG_FUNCTION_ARGS);
+/* Enable the extension globally. */
+Datum pg_show_plans_enable(PG_FUNCTION_ARGS);
+/* Disable the extension globally. */
+Datum pg_show_plans_disable(PG_FUNCTION_ARGS);
+/* Set plan string output format to JSON globally. */
+Datum pgsp_format_json(PG_FUNCTION_ARGS);
+/* Set plan string output format to TEXT globally. */
+Datum pgsp_format_text(PG_FUNCTION_ARGS);
+
+/* Required by PostgreSQL extension API. */
+PG_FUNCTION_INFO_V1(pg_show_plans);
+PG_FUNCTION_INFO_V1(pg_show_plans_enable);
+PG_FUNCTION_INFO_V1(pg_show_plans_disable);
+PG_FUNCTION_INFO_V1(pgsp_format_json);
+PG_FUNCTION_INFO_V1(pgsp_format_text);
+
+/* Called by PostgreSQL upon extension load. */
+void _PG_init(void);
+
+/* Hook functions. */
+#if PG_VERSION_NUM >= 150000
+static void pgsp_shmem_request(void); /* Request shared memory. */
+#endif
+/* Initialize shared memory. */
+static void pgsp_shmem_startup(void);
+/* Shutdown callback for processes other than postmaster, does nothing. */
+static void pgsp_shmem_shutdown(int code, Datum arg);
+/* Intercept executor query plans and store them within a global hash table. */
+static void pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags);
+/* The following two functions keep track of nest level counter. */
+static void pgsp_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction,
+                             uint64 count, bool execute_once);
+static void pgsp_ExecutorEnd(QueryDesc *queryDesc);
+/* Delete all plans associated with a given process ID. */
+static void pgsp_ExecutorFinish(QueryDesc *queryDesc);
+
+/* Estimate shared memory space needed. */
+static Size pgsp_memsize(void);
+/* Allocate a new hashtable entry. */
+static pgspEntry *alloc_entry(const pgspHashKey * key);
+/* Store a new query plan. */
+static void store_entry(const char *plan, const int plan_len,
+                        const int nested_level);
+/* Append a query plan to the existing hash table entry. */
+static void store_plan_into_entry(pgspEntry * entry, const int nested_level,
+                                  const char *plan, const int len,
+                                  const pgspHashKey key);
+/* Delete all plans associated with a given process ID (a single entry). */
+static void delete_entry(const pid_t pid);
+/* Generates a key for a hash table entry. */
+static uint32 gen_hashkey(const void *key, Size keysize);
+/* Tells whether two given keys are the same, to resolve bucket collisions. */
+static int compare_hashkey(const void *key1, const void *key2, Size keysize);
+/* Enables/Disables the extension globally, for all clients. */
+static void set_state(const bool state);
+/* Set plan string display format. */
+static void set_format(int format);
+
+/* Global Variables. */
+/* Whenever you register your own hook function, it becomes your responsibility
+ * to call the old hook function. Thus, prior to setting a new fuction pointer
+ * to the hook variable, you must save the old one.
+ *
+ * Variables for old hook function pointers. */
 #if PG_VERSION_NUM >= 150000
 static shmem_request_hook_type prev_shmem_request_hook = NULL;
 #endif
 static shmem_startup_hook_type prev_shmem_startup_hook = NULL;
 static ExecutorStart_hook_type prev_ExecutorStart = NULL;
 static ExecutorRun_hook_type prev_ExecutorRun = NULL;
-static ExecutorFinish_hook_type prev_ExecutorFinish = NULL;
-static ExecutorEnd_hook_type prev_ExecutorEnd = NULL;
+static ExecutorEnd_hook_type prev_ExecutorEnd = NULL; // After any
+static ExecutorFinish_hook_type prev_ExecutorFinish = NULL; // After last run
 
-/* Links to shared memory state */
-static pgspSharedState * pgsp = NULL;
-static HTAB *pgsp_hash = NULL;
+static pgspSharedState *pgsp = NULL; /* Shared extension state. */
+static HTAB *pgsp_hash = NULL;       /* Shared query plans hash. */
 
-/*
- * GUC variables
- */
-typedef enum
-{
-	PLAN_FORMAT_TEXT,
-	PLAN_FORMAT_JSON
-}			PGSPPlanFormats;
+static int  nested_level = 0; /* Current nest depth of ExecutorRun+ProcessUtility. */
+static int  pgsp_max;         /* Max plans to show. */
 
+/* GUC variables. */
+static int  plan_format;     /* Output format. */
+static int  max_plan_length; /* Max length of query plan. */
+/* Whether we should track plans for the current client,
+ * also used to decide whether the extension should be enabled globally at
+ * PostgreSQL startup. */
+static bool pgsp_enable;
+
+
+/* GUC enum type. */
 static const struct config_enum_entry plan_formats[] =
 {
 	{"text", PLAN_FORMAT_TEXT, false},
@@ -107,46 +169,6 @@ static const struct config_enum_entry plan_formats[] =
 	{NULL, 0, false}
 };
 
-/*
- * Function declarations
- */
-void		_PG_init(void);
-
-Datum		pg_show_plans(PG_FUNCTION_ARGS);
-Datum		pg_show_plans_enable(PG_FUNCTION_ARGS);
-Datum		pg_show_plans_disable(PG_FUNCTION_ARGS);
-Datum		pgsp_format_json(PG_FUNCTION_ARGS);
-Datum		pgsp_format_text(PG_FUNCTION_ARGS);
-
-PG_FUNCTION_INFO_V1(pg_show_plans);
-PG_FUNCTION_INFO_V1(pg_show_plans_enable);
-PG_FUNCTION_INFO_V1(pg_show_plans_disable);
-PG_FUNCTION_INFO_V1(pgsp_format_json);
-PG_FUNCTION_INFO_V1(pgsp_format_text);
-
-#if PG_VERSION_NUM >= 150000
-static void pgsp_shmem_request(void);
-#endif
-static Size pgsp_memsize(void);
-static void pgsp_shmem_startup(void);
-static void pgsp_shmem_shutdown(int code, Datum arg);
-static void pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags);
-static void pgsp_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction, uint64 count, bool execute_once);
-static void pgsp_ExecutorFinish(QueryDesc *queryDesc);
-static void pgsp_ExecutorEnd(QueryDesc *queryDesc);
-
-static pgspEntry * alloc_entry(const pgspHashKey * key);
-static void store_entry(const char *plan, const int plan_len, const int nested_level);
-static void store_plan_into_entry(pgspEntry * entry, const int nested_level,
-								  const char *plan, const int len, const pgspHashKey key);
-static void delete_entry(const pid_t pid);
-static uint32 gen_hashkey(const void *key, Size keysize);
-static int	compare_hashkey(const void *key1, const void *key2, Size keysize);
-static void set_state(const bool state);
-
-/*
- * Module callback
- */
 void
 _PG_init(void)
 {
@@ -154,48 +176,43 @@ _PG_init(void)
 		return;
 
 	DefineCustomBoolVariable("pg_show_plans.enable",
-							 "Whether the plan can be shown.",
-							 NULL,
-							 &pgsp_enable,
-							 true,
-							 PGC_USERSET,
-							 0,
-							 NULL,
-							 NULL,
-							 NULL);
+	                         "Whether the plan can be shown.",
+	                         NULL,
+	                         &pgsp_enable,
+	                         true,
+	                         PGC_USERSET,
+	                         0,
+	                         NULL, NULL, NULL);
 
 	DefineCustomIntVariable("pg_show_plans.max_plan_length",
-							gettext_noop("Set the maximum plan length. "
-										 "Note that this module allocates (max_plan_length*max_connections) "
-										 "bytes on the shared memory."),
-							gettext_noop("A hash entry whose length is max_plan_length stores the plans of "
-										 "all nested levels, so this value should be set enough size. "
-										 "However, if it is too large, the server may not be able to start "
-										 "because of the shortage of memory due to the huge shared memory size."),
-							&max_plan_length,
-							16 * 1024,
-							1024,
-							100 * 1024,
-							PGC_POSTMASTER,
-							0,
-							NULL,
-							NULL,
-							NULL);
+	                        gettext_noop("Set the maximum plan length. "
+	                                     "Note that this module allocates (max_plan_length*max_connections) "
+	                                     "bytes on the shared memory."),
+	                        gettext_noop("A hash entry whose length is max_plan_length stores the plans of "
+	                                     "all nested levels, so this value should be set enough size. "
+	                                     "However, if it is too large, the server may not be able to start "
+	                                     "because of the shortage of memory due to the huge shared memory size."),
+	                        &max_plan_length,
+	                        16 * 1024,
+	                        1024,
+	                        100 * 1024,
+	                        PGC_POSTMASTER,
+	                        0,
+	                        NULL, NULL, NULL);
 
 	DefineCustomEnumVariable("pg_show_plans.plan_format",
-							 "Set the output format of query plans.",
-							 NULL,
-							 &plan_format,
-							 PLAN_FORMAT_TEXT,
-							 plan_formats,
-							 PGC_POSTMASTER,
-							 0,
-							 NULL,
-							 NULL,
-							 NULL);
+	                         "Set the output format of query plans.",
+	                         NULL,
+	                         &plan_format,
+	                         PLAN_FORMAT_TEXT,
+	                         plan_formats,
+	                         PGC_POSTMASTER,
+	                         0,
+	                         NULL, NULL, NULL);
 
 	EmitWarningsOnPlaceholders("pg_show_plans");
 
+	/* Save old hooks, and install ours. */
 #if PG_VERSION_NUM >= 150000
 	prev_shmem_request_hook = shmem_request_hook;
 	shmem_request_hook = pgsp_shmem_request;
@@ -203,8 +220,6 @@ _PG_init(void)
 	RequestAddinShmemSpace(pgsp_memsize());
 	RequestNamedLWLockTranche("pg_show_plans", 1);
 #endif
-
-	/* Install hooks. */
 	prev_shmem_startup_hook = shmem_startup_hook;
 	shmem_startup_hook = pgsp_shmem_startup;
 
@@ -214,47 +229,42 @@ _PG_init(void)
 	prev_ExecutorRun = ExecutorRun_hook;
 	ExecutorRun_hook = pgsp_ExecutorRun;
 
-	prev_ExecutorFinish = ExecutorFinish_hook;
-	ExecutorFinish_hook = pgsp_ExecutorFinish;
-
 	prev_ExecutorEnd = ExecutorEnd_hook;
 	ExecutorEnd_hook = pgsp_ExecutorEnd;
+
+	prev_ExecutorFinish = ExecutorFinish_hook;
+	ExecutorFinish_hook = pgsp_ExecutorFinish;
 }
 
-/*
- * shmem_startup hook: allocate or attach to shared memory.
- */
 static void
 pgsp_shmem_startup(void)
 {
-	bool		found;
-	HASHCTL		info;
-
-	if (prev_shmem_startup_hook)
+	if (prev_shmem_startup_hook) /* Call old hook function, if exists. */
 		prev_shmem_startup_hook();
+
+	bool    found; /* Does shared extension state structure exist? */
+	HASHCTL info;  /* Query plans hash table info. */
 
 	pgsp_max = MaxConnections;
 	pgsp = NULL;
 	pgsp_hash = NULL;
 
-	/* Create or attach to the shared memory state, including hash table */
+	/* Create or attach to the shared memory state, including hash table. */
 	LWLockAcquire(AddinShmemInitLock, LW_EXCLUSIVE);
 
 	pgsp = ShmemInitStruct("pg_show_plans", sizeof(pgspSharedState), &found);
-
-	if (!found)
+	if (!found) /* First time through ... */
 	{
-		/* First time through ... */
 		pgsp->lock = &(GetNamedLWLockTranche("pg_show_plans"))->lock;
 		SpinLockInit(&pgsp->elock);
 
-		/* Set the initial value for is_enable. */
+		/* Based on the GUC value, enable/disable extension on start up. */
 		pgsp->is_enable = pgsp_enable;
+		/* Same with plan format. */
 		pgsp->plan_format = plan_format;
 	}
 
-
-	/* Be sure everyone agrees on the hash table entry size */
+	/* Be sure everyone agrees on the hash table entry size. */
 	memset(&info, 0, sizeof(info));
 	info.keysize = sizeof(pgspHashKey);
 	info.entrysize = offsetof(pgspEntry, plan) + max_plan_length;
@@ -263,9 +273,9 @@ pgsp_shmem_startup(void)
 	info.match = compare_hashkey;
 
 	pgsp_hash = ShmemInitHash("pg_show_plans hash",
-							  pgsp_max, pgsp_max,
-							  &info,
-							  HASH_ELEM | HASH_FUNCTION | HASH_COMPARE);
+	                          pgsp_max, pgsp_max,
+	                          &info,
+	                          HASH_ELEM | HASH_FUNCTION | HASH_COMPARE);
 
 	LWLockRelease(AddinShmemInitLock);
 
@@ -276,32 +286,25 @@ pgsp_shmem_startup(void)
 static void
 pgsp_shmem_shutdown(int code, Datum arg)
 {
-	/* Do nothing */
-	return;
+	return; /* Do nothing. */
 }
 
-/*
- * ExecutorStart hook: start up tracking if needed
- */
+/* Execute EXPLAIN and Store the query plan into the hash table. */
 static void
 pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags)
 {
-	ExplainState *es = NewExplainState();
-
-	if (prev_ExecutorStart)
+	if (prev_ExecutorStart) /* Call previous hook, if exists. */
 		prev_ExecutorStart(queryDesc, eflags);
 	else
 		standard_ExecutorStart(queryDesc, eflags);
 
-	/* Bypass the following steps if this pgsp_enable is set to false  */
+	ExplainState *es = NewExplainState();
+
+	/* Bypass the following steps if this pgsp_enable is set to false. */
 	if (!pgsp_enable)
 		return;
 
-	/*
-	 * Execute EXPLAIN and Store the query plan into the hashtable
-	 */
-
-	/* Skip subsequent processing if is_enable is false */
+	/* Skip subsequent processing if is_enable is false. */
 	SpinLockAcquire(&pgsp->elock);
 	if (!pgsp->is_enable)
 	{
@@ -328,12 +331,8 @@ pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags)
 	SpinLockAcquire(&pgsp->elock);
 	if (es->str->len >= max_plan_length)
 	{
-		/*
-		 * Note: If the length of the query plan is longer than
-		 * max_plan_length, the message below is shown instead of the plan
-		 * string.
-		 */
-		char	   *msg = "<too long query plan string>";
+		/* Show this message in place of the plan if it is too long. */
+		char *msg = "<too long query plan string>";
 
 		memcpy(es->str->data, msg, strlen(msg));
 		es->str->len = strlen(msg);
@@ -359,10 +358,8 @@ pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags)
 	pfree(es->str->data);
 }
 
-/*
- * ExecutorRun hook: all we need do is show nesting depth
- */
-static void pgsp_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction, uint64 count, bool execute_once)
+static void pgsp_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction,
+                             uint64 count, bool execute_once)
 {
 	nested_level++;
 	PG_TRY();
@@ -379,9 +376,6 @@ static void pgsp_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction, uint
 	PG_END_TRY();
 }
 
-/*
- * ExecutorFinish hook: all we need do is show nesting depth
- */
 static void
 pgsp_ExecutorFinish(QueryDesc *queryDesc)
 {
@@ -401,16 +395,13 @@ pgsp_ExecutorFinish(QueryDesc *queryDesc)
 	PG_END_TRY();
 }
 
-/*
- * ExecutorEnd hook:
- */
 static void
 pgsp_ExecutorEnd(QueryDesc *queryDesc)
 {
-	/* Bypass the following steps if this pgsp_enable is set to false  */
+	/* Bypass the following steps if this pgsp_enable is set to false. */
 	if (pgsp_enable)
 	{
-		/* Delete entry */
+		/* Delete hash table entry, that is a plan along with nests. */
 		SpinLockAcquire(&pgsp->elock);
 		if (pgsp->is_enable)
 		{
@@ -473,10 +464,7 @@ store_entry(const char *plan, const int plan_len, const int nested_level)
 	LWLockAcquire(pgsp->lock, LW_EXCLUSIVE);
 
 	if (nested_level == 0)
-	{
-		/*
-		 * Create a new entry
-		 */
+	{ /* Create a new entry. */
 
 		/* Delete old entry if exist. */
 		if (entry != NULL)
@@ -495,9 +483,7 @@ store_entry(const char *plan, const int plan_len, const int nested_level)
 			return;
 		}
 
-		/*
-		 * Store data into the entry.
-		 */
+		/* Store data into the entry. */
 		e = (pgspEntry *) entry;
 		SpinLockAcquire(&e->mutex);
 		store_plan_into_entry(entry, nested_level, plan, plan_len, key);
@@ -505,22 +491,19 @@ store_entry(const char *plan, const int plan_len, const int nested_level)
 	}
 	else if (0 < nested_level && nested_level < MAX_NESTED_LEVEL)
 	{
-		/*
-		 * Append plan to the entry whose key is MyProcPid
-		 */
+		/* Append plan to the entry whose key is MyProcPid. */
 		if (entry == NULL)
 		{
 			LWLockRelease(pgsp->lock);
 			elog(WARNING,
-				 gettext_noop("The %dth level plan could not be stored "
-							  "in the entry whose pid is %d because the entry could not find."),
-				 nested_level, MyProcPid);
+				gettext_noop("cannot store a plan at nest level %d "
+				             "because the hash entry of process %d "
+				             "cannot be found"),
+				nested_level, MyProcPid);
 			return;
 		}
 
-		/*
-		 * Store data into the entry.
-		 */
+		/* Store data into the entry. */
 		e = (pgspEntry *) entry;
 		SpinLockAcquire(&e->mutex);
 		store_plan_into_entry(entry, nested_level, plan, plan_len, key);
@@ -530,9 +513,10 @@ store_entry(const char *plan, const int plan_len, const int nested_level)
 	{
 		LWLockRelease(pgsp->lock);
 		elog(WARNING,
-			 gettext_noop("The %dth level plan could not be stored in the entry whose pid is %d "
-						  "because MAX_NESTED_LEVEL is %d."),
-			 nested_level, MyProcPid, MAX_NESTED_LEVEL);
+			gettext_noop("cannot store a plan at nest level %d "
+			             "of process %d, because maximal allowed "
+			             "nest level is %d"),
+			nested_level, MyProcPid, MAX_NESTED_LEVEL);
 		return;
 	}
 
@@ -541,9 +525,9 @@ store_entry(const char *plan, const int plan_len, const int nested_level)
 
 static void
 store_plan_into_entry(pgspEntry * entry, const int nested_level,
-					  const char *plan, const int len, const pgspHashKey key)
+                      const char *plan, const int len, const pgspHashKey key)
 {
-	int			plan_len = len;
+	int plan_len = len;
 
 	/* Initialize the entry data except the plan. */
 	if (nested_level == 0)
@@ -554,10 +538,7 @@ store_plan_into_entry(pgspEntry * entry, const int nested_level,
 		entry->pid = key.pid;
 	}
 
-	/*
-	 * Check the plan_len and recalculate it if it is long to store into the
-	 * entry.
-	 */
+	/* Verify the plan will fit into the allocated memory, snip if not. */
 	if (plan_len + entry->plan_len >= max_plan_length)
 	{
 		plan_len = max_plan_length - entry->plan_len;
@@ -570,15 +551,12 @@ store_plan_into_entry(pgspEntry * entry, const int nested_level,
 	memcpy((void *) (entry->plan + entry->plan_len), plan, plan_len);
 	entry->plan_len += plan_len;
 	entry->plan[entry->plan_len] = '\0';
-	entry->plan_len++;			/* add 1 byte:'\0' */
+	entry->plan_len++; /* For '\0'. */
 	entry->terminalByte[nested_level] = entry->plan_len;
 	entry->nestedLevel = nested_level;
 }
 
 #if (PG_VERSION_NUM >= 150000)
-/*
- * Requests any additional shared memory required for our extension
- */
 static void
 pgsp_shmem_request(void)
 {
@@ -590,64 +568,47 @@ pgsp_shmem_request(void)
 }
 #endif
 
-/*
- * Estimate shared memory space needed.
- */
 static Size
 pgsp_memsize(void)
 {
-	Size		size;
+	Size size;
 
 	size = MAXALIGN(sizeof(pgspSharedState));
 	size = add_size(size, hash_estimate_size(pgsp_max, sizeof(pgspEntry)));
 	return size;
 }
 
-/*
- * Generate a unique value from hashkey for the hashtable.
- */
+/* Use process ID as the key. */
 static uint32
 gen_hashkey(const void *key, Size keysize)
 {
-	const		pgspHashKey *k = (const pgspHashKey *) key;
-
+	const pgspHashKey *k = (const pgspHashKey *) key;
 	return (uint32) k->pid;
 }
 
-/*
- * Compare hashkeys
- */
 static int
 compare_hashkey(const void *key1, const void *key2, Size keysize)
 {
-	const		pgspHashKey *k1 = (const pgspHashKey *) key1;
-	const		pgspHashKey *k2 = (const pgspHashKey *) key2;
-
+	const pgspHashKey *k1 = (const pgspHashKey *) key1;
+	const pgspHashKey *k2 = (const pgspHashKey *) key2;
 	return (k1->pid == k2->pid) ? 0 : 1;
 }
 
-/*
- * Allocate a new hashtable entry.
- * caller must hold an exclusive lock on pgsp->lock
- *
- */
+/* Caller must hold an exclusive lock on pgsp->lock. */
 static pgspEntry *
 alloc_entry(const pgspHashKey * key)
 {
-	pgspEntry  *entry;
-	bool		found;
-	int			i;
+	pgspEntry *entry;
+	bool       found;
+	int        i;
 
-	/*
-	 * Find or create an entry with desired hash code. If hashtable is full,
-	 * return NULL.
-	 */
-	if ((entry = (pgspEntry *) hash_search(pgsp_hash, key, HASH_ENTER_NULL, &found)) == NULL)
+	entry = (pgspEntry *) hash_search(pgsp_hash, key, HASH_ENTER_NULL, &found);
+	if (entry == NULL) /* Hash table is full. */
 		return entry;
 
-	if (!found)
+	if (!found) /* No entry has been found, thus a new one has been created. */
 	{
-		/* New entry, initialize it */
+		/* Initialize it. */
 		SpinLockInit(&entry->mutex);
 		entry->plan_len = 0;
 		for (i = 0; i < MAX_NESTED_LEVEL; i++)
@@ -662,9 +623,6 @@ alloc_entry(const pgspHashKey * key)
 	return entry;
 }
 
-/*
- * Delete all stored plans related to pid.
- */
 static void
 delete_entry(const pid_t pid)
 {
@@ -681,21 +639,18 @@ delete_entry(const pid_t pid)
 	LWLockRelease(pgsp->lock);
 }
 
-/*
- * Set state to is_enable
- */
 static void
 set_state(const bool state)
 {
-	bool		is_allowed_role = false;
+	bool is_allowed_role = false;
 
 	/* Safety check... */
 	if (!pgsp || !pgsp_hash)
 		ereport(ERROR,
-				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("pg_show_plans must be loaded via shared_preload_libraries")));
+		        (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+		         errmsg("pg_show_plans must be loaded via shared_preload_libraries")));
 
-	/* Superusers or members of pg_read_all_stats members are allowed */
+	/* Superusers or members of pg_read_all_stats members are allowed. */
 #if PG_VERSION_NUM >= 140000
 	is_allowed_role = is_member_of_role(GetUserId(), ROLE_PG_READ_ALL_STATS);
 #else
@@ -710,9 +665,6 @@ set_state(const bool state)
 	}
 }
 
-/*
- * Change the state of this extension: enable or disable
- */
 Datum
 pg_show_plans_enable(PG_FUNCTION_ARGS)
 {
@@ -727,19 +679,16 @@ pg_show_plans_disable(PG_FUNCTION_ARGS)
 	PG_RETURN_VOID();
 }
 
-/*
- * Set format to plan_format
- */
 static void
 set_format(int format)
 {
-	bool		is_allowed_role = false;
+	bool is_allowed_role = false;
 
 	/* Safety check... */
 	if (!pgsp || !pgsp_hash)
 		ereport(ERROR,
-				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("pg_show_plans must be loaded via shared_preload_libraries")));
+		        (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+		         errmsg("pg_show_plans must be loaded via shared_preload_libraries")));
 
 	/* Superusers or members of pg_read_all_stats members are allowed */
 #if PG_VERSION_NUM >= 140000
@@ -756,9 +705,6 @@ set_format(int format)
 	}
 }
 
-/*
- * Change the output format.
- */
 Datum
 pgsp_format_json(PG_FUNCTION_ARGS)
 {
@@ -846,9 +792,7 @@ pg_show_plans(PG_FUNCTION_ARGS)
 		hash_seq_init(&hash_seq, pgsp_hash);
 		while ((entry = hash_seq_search(&hash_seq)) != NULL)
 		{
-#define PG_SHOW_PLANS_COLS		 5
-
-			Datum		values[PG_SHOW_PLANS_COLS];
+			Datum	values[PG_SHOW_PLANS_COLS];
 			bool		nulls[PG_SHOW_PLANS_COLS];
 			int			i,
 						j;

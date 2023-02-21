@@ -239,11 +239,11 @@ _PG_init(void)
 static void
 pgsp_shmem_startup(void)
 {
-	if (prev_shmem_startup_hook) /* Call old hook function, if exists. */
-		prev_shmem_startup_hook();
-
 	bool    found; /* Does shared extension state structure exist? */
 	HASHCTL info;  /* Query plans hash table info. */
+
+	if (prev_shmem_startup_hook) /* Call old hook function, if exists. */
+		prev_shmem_startup_hook();
 
 	pgsp_max = MaxConnections;
 	pgsp = NULL;
@@ -293,12 +293,12 @@ pgsp_shmem_shutdown(int code, Datum arg)
 static void
 pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags)
 {
+	ExplainState *es = NewExplainState();
+
 	if (prev_ExecutorStart) /* Call previous hook, if exists. */
 		prev_ExecutorStart(queryDesc, eflags);
 	else
 		standard_ExecutorStart(queryDesc, eflags);
-
-	ExplainState *es = NewExplainState();
 
 	/* Bypass the following steps if this pgsp_enable is set to false. */
 	if (!pgsp_enable)

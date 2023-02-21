@@ -16,6 +16,7 @@
 #include "commands/explain.h"
 #include "funcapi.h"
 #include "mb/pg_wchar.h"
+#include "miscadmin.h"
 #include "pgstat.h"
 #include "storage/ipc.h"
 #include "storage/lwlock.h"

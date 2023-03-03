@@ -21,13 +21,13 @@ git clone https://github.com/cybertec-postgresql/pg_show_plans.git
 cd pg_show_plans
 USE_PGXS=true # `pg_config` binary must be in your $PATH (install Postgres).
 make
-make install
+sudo make install
 ```
 
 ## Within PostgreSQL source tree:
 
 ```
-export PG_VER='15.1' # Export the required PostgreSQL version.
+PG_VER='15.1' # Export the required PostgreSQL version.
 curl -O "https://download.postgresql.org/pub/source/v${PG_VER}/postgresql-${PG_VER}.tar.bz2"
 tar xvfj "postgresql-${PG_VER}.tar.bz2"
 cd postgresql-${PG_VER}
@@ -37,7 +37,7 @@ cd contrib
 git clone https://github.com/cybertec-postgresql/pg_show_plans.git
 cd pg_show_plans
 make
-make install
+sudo make install
 ```
 
 # USAGE

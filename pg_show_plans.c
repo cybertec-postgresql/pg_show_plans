@@ -52,7 +52,8 @@ typedef struct pgspEntry /* Hash table entry. */
 
 typedef struct pgspSharedState /* Shared state of the extension. */
 {
-	LWLock *lock; /* Protects shared hash table. */
+	LWLock *lock;    /* Protects shared hash table. */
+	bool is_enabled; /* Enables or disables the extension. */
 } pgspSharedState;
 
 typedef struct pgspCtx { /* Used as `funcctx->user_fctx` in pg_show_plans(). */
@@ -104,8 +105,6 @@ static pgspSharedState *pgsp = NULL;
 static pgspEntry *pgsp_cache = NULL;
 /* Shared hash table with query plans. */
 static HTAB *pgsp_hash = NULL;
-/* Maximal query plan length. */
-static int max_plan_length;
 /* Current query plan nested level. */
 static unsigned int nest_level = 0;
 /* To save old hook values. */
@@ -116,6 +115,12 @@ static shmem_startup_hook_type prev_shmem_startup_hook = NULL;
 static ExecutorStart_hook_type prev_ExecutorStart = NULL;
 static ExecutorRun_hook_type prev_ExecutorRun = NULL;
 
+/* GUC variables. */
+/* Maximal query plan length. */
+static int max_plan_length;
+/* Start extension enabled or not?. */
+static bool start_enabled;
+
 void
 _PG_init(void)
 {
@@ -123,6 +128,14 @@ _PG_init(void)
 	if (!process_shared_preload_libraries_in_progress)
 		return;
 
+	DefineCustomBoolVariable("pg_show_plans.start_enabled",
+	                         "Start with the extension enabled?",
+	                         NULL,
+	                         &start_enabled,
+	                         true,
+	                         PGC_POSTMASTER,
+	                         0,
+	                         NULL, NULL, NULL);
 	DefineCustomIntVariable("pg_show_plans.max_plan_length",
 	                        gettext_noop("Set the maximum plan length. "
 	                                     "Note that this module allocates (max_plan_length*max_connections) "
@@ -203,6 +216,7 @@ ensure_cached(void)
 
 	pgsp_cache->user_id = GetUserId();
 	pgsp_cache->plan[0] = '\0';
+	pgsp_cache->n_plans = 0;
 	on_shmem_exit(cleanup, (Datum)NULL);
 	return 1;
 }
@@ -294,6 +308,7 @@ pgsp_shmem_startup(void)
 	if (!found) /* First time. */
 	{
 		pgsp->lock = &(GetNamedLWLockTranche("pg_show_plans"))->lock;
+		pgsp->is_enabled = start_enabled;
 	}
 
 	memset(&info, 0, sizeof(info));
@@ -320,18 +335,21 @@ pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags)
 	else
 		standard_ExecutorStart(queryDesc, eflags);
 
-	es = NewExplainState();
-	es->format = EXPLAIN_FORMAT_TEXT;
-	ExplainBeginOutput(es);
-	ExplainPrintPlan(es, queryDesc);
-	ExplainEndOutput(es);
-
 	if (!ensure_cached()) {
 		ereport(WARNING,
 		        errcode(ERRCODE_OUT_OF_MEMORY),
 		        errmsg("not enough memory to store new query plans"));
 		return;
 	}
+
+	if (!pgsp->is_enabled)
+		return;
+
+	es = NewExplainState();
+	es->format = EXPLAIN_FORMAT_TEXT;
+	ExplainBeginOutput(es);
+	ExplainPrintPlan(es, queryDesc);
+	ExplainEndOutput(es);
 
 	append_query_plan(es);
 	pfree(es->str->data);

@@ -54,6 +54,7 @@ typedef struct pgspSharedState /* Shared state of the extension. */
 {
 	LWLock *lock;    /* Protects shared hash table. */
 	bool is_enabled; /* Enables or disables the extension. */
+	int plan_format;
 } pgspSharedState;
 
 typedef struct pgspCtx { /* Used as `funcctx->user_fctx` in pg_show_plans(). */
@@ -120,6 +121,16 @@ static ExecutorRun_hook_type prev_ExecutorRun = NULL;
 static int max_plan_length;
 /* Start extension enabled or not?. */
 static bool start_enabled;
+/* pg_show_plans() query plan output format. */
+static int plan_format;
+/* Available query plan formats. */
+static const struct config_enum_entry plan_formats[] =
+{
+	{"text", EXPLAIN_FORMAT_TEXT, false},
+	{"json", EXPLAIN_FORMAT_JSON, false},
+	{"yaml", EXPLAIN_FORMAT_YAML, false},
+	{"xml",  EXPLAIN_FORMAT_XML,  false},
+};
 
 void
 _PG_init(void)
@@ -151,6 +162,15 @@ _PG_init(void)
 	                        PGC_POSTMASTER,
 	                        0,
 	                        NULL, NULL, NULL);
+	DefineCustomEnumVariable("pg_show_plans.plan_format",
+	                         "Set the output format of query plans.",
+	                         NULL,
+	                         &plan_format,
+	                         EXPLAIN_FORMAT_TEXT,
+	                         plan_formats,
+	                         PGC_POSTMASTER,
+	                         0,
+	                         NULL, NULL, NULL);
 
 	/* Save old hooks, and install new ones. */
 #if PG_VERSION_NUM >= 150000
@@ -250,12 +270,15 @@ append_query_plan(ExplainState *es)
 		offset++; /* Point right after the '\0'. */
 	space_left = max_plan_length - offset;
 
-	if (new_plan->len-1 < space_left) { /* Enough space for a new plan. */
+	if (pgsp->plan_format == EXPLAIN_FORMAT_TEXT)
+		new_plan->len--; /* Discard '\n'. */
+
+	if (new_plan->len < space_left) { /* Enough space for a new plan. */
 		/* -1 to dispose of '\n'. */
 		memcpy(pgsp_cache->plan + offset,
-		       new_plan->data, new_plan->len-1);
-		pgsp_cache->plan[offset + new_plan->len - 1] = '\0';
-		pgsp_cache->plan_len[nest_level] = new_plan->len-1;
+		       new_plan->data, new_plan->len);
+		pgsp_cache->plan[offset + new_plan->len] = '\0';
+		pgsp_cache->plan_len[nest_level] = new_plan->len;
 	} else { /* No space left to hold a new plan, snip it. */
 		memcpy(pgsp_cache->plan + offset,
 		       new_plan->data, space_left);
@@ -309,6 +332,7 @@ pgsp_shmem_startup(void)
 	{
 		pgsp->lock = &(GetNamedLWLockTranche("pg_show_plans"))->lock;
 		pgsp->is_enabled = start_enabled;
+		pgsp->plan_format = plan_format;
 	}
 
 	memset(&info, 0, sizeof(info));
@@ -346,7 +370,7 @@ pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags)
 		return;
 
 	es = NewExplainState();
-	es->format = EXPLAIN_FORMAT_TEXT;
+	es->format = pgsp->plan_format;
 	ExplainBeginOutput(es);
 	ExplainPrintPlan(es, queryDesc);
 	ExplainEndOutput(es);

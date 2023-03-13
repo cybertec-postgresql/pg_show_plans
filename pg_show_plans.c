@@ -21,6 +21,8 @@
 #include "storage/lwlock.h"   /* Locking mechanism, for shared data safety. */
 #include "storage/shmem.h"    /* RequestAddinShmemSpace() */
 #include "utils/builtins.h"   /* CStringGetTextDatum() */
+#include "utils/guc.h"        /* For GUC variables. */
+
 
 /* Constants and Macros */
 PG_MODULE_MAGIC;
@@ -103,7 +105,7 @@ static pgspEntry *pgsp_cache = NULL;
 /* Shared hash table with query plans. */
 static HTAB *pgsp_hash = NULL;
 /* Maximal query plan length. */
-static unsigned int max_plan_len = 16 * 1024;
+static int max_plan_length;
 /* Current query plan nested level. */
 static unsigned int nest_level = 0;
 /* To save old hook values. */
@@ -120,6 +122,22 @@ _PG_init(void)
 	/* Must be in shared_preload_libraries="...". */
 	if (!process_shared_preload_libraries_in_progress)
 		return;
+
+	DefineCustomIntVariable("pg_show_plans.max_plan_length",
+	                        gettext_noop("Set the maximum plan length. "
+	                                     "Note that this module allocates (max_plan_length*max_connections) "
+	                                     "bytes on the shared memory."),
+	                        gettext_noop("A hash entry whose length is max_plan_length stores the plans of "
+	                                     "all nested levels, so this value should be set enough size. "
+	                                     "However, if it is too large, the server may not be able to start "
+	                                     "because of the shortage of memory due to the huge shared memory size."),
+	                        &max_plan_length,
+	                        16 * 1024,
+	                        1024,
+	                        100 * 1024,
+	                        PGC_POSTMASTER,
+	                        0,
+	                        NULL, NULL, NULL);
 
 	/* Save old hooks, and install new ones. */
 #if PG_VERSION_NUM >= 150000
@@ -142,7 +160,7 @@ _PG_init(void)
 Size
 hash_entry_size(void)
 {	/* Structure size & variable array maximal length. */
-	return offsetof(pgspEntry, plan) + max_plan_len;
+	return offsetof(pgspEntry, plan) + max_plan_length;
 }
 
 Size
@@ -216,7 +234,7 @@ append_query_plan(ExplainState *es)
 		offset += pgsp_cache->plan_len[i];
 	if (nest_level >= 1)
 		offset++; /* Point right after the '\0'. */
-	space_left = max_plan_len - offset;
+	space_left = max_plan_length - offset;
 
 	if (new_plan->len-1 < space_left) { /* Enough space for a new plan. */
 		/* -1 to dispose of '\n'. */
@@ -227,8 +245,8 @@ append_query_plan(ExplainState *es)
 	} else { /* No space left to hold a new plan, snip it. */
 		memcpy(pgsp_cache->plan + offset,
 		       new_plan->data, space_left);
-		pgsp_cache->plan[max_plan_len-1] = '\0';
-		pgsp_cache->plan[max_plan_len-2] = '|'; /* Snip indicator. */
+		pgsp_cache->plan[max_plan_length-1] = '\0';
+		pgsp_cache->plan[max_plan_length-2] = '|'; /* Snip indicator. */
 		pgsp_cache->plan_len[nest_level] = space_left;
 	}
 	pgsp_cache->db_id = MyDatabaseId;

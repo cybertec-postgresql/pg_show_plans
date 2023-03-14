@@ -88,6 +88,8 @@ static void cleanup(int code, Datum arg);
 static void set_state(const bool state);
 /* Set query plan output format: text, json, ... */
 static void set_format(const int format);
+/* Check the extension has been properly loaded. */
+static inline void shmem_safety_check(void);
 /* Check whether the user has required privileges. */
 static bool is_allowed_role(void);
 /* Hook functions. */
@@ -324,6 +326,7 @@ void cleanup(int code, Datum arg)
 void
 set_state(const bool state)
 {
+	shmem_safety_check();
 	if (is_allowed_role())
 		pgsp->is_enabled = state;
 }
@@ -331,8 +334,21 @@ set_state(const bool state)
 void
 set_format(const int format)
 {
+	shmem_safety_check();
 	if (is_allowed_role())
 		pgsp->plan_format = format;
+}
+
+inline void
+shmem_safety_check(void)
+{
+	if (pgsp && pgsp_hash)
+		return;
+
+	ereport(ERROR,
+	        (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+	         errmsg("pg_show_plans must be loaded"
+	                "via shared_preload_libraries")));
 }
 
 bool
@@ -519,6 +535,8 @@ pg_show_plans(PG_FUNCTION_ARGS)
 	pgspEntry       *pgvp_tmp_entry;
 	int              curr_nest;
 	bool             is_done;
+
+	shmem_safety_check();
 
 	if (SRF_IS_FIRSTCALL())
 	{

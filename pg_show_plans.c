@@ -14,6 +14,7 @@
 #include "postgres.h"
 /* Comments just indicate which includes are still in use. */
 #include "commands/explain.h" /* To explain statements. */
+#include "fmgr.h"             /* PG_RETURN_VOID() */
 #include "funcapi.h"          /* To return sets in SQL funcs. */
 #include "lib/stringinfo.h"   /* StringInfo */
 #include "miscadmin.h"        /* process_shared_preload_libraries_in_progress */
@@ -94,10 +95,16 @@ static void pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags);
 static void pgsp_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction,
                              uint64 count, bool execute_once);
 
+/* Enables the extension. */
+Datum pg_show_plans_enable(PG_FUNCTION_ARGS);
+/* Disables the extension. */
+Datum pg_show_plans_disable(PG_FUNCTION_ARGS);
 /* Show query plans of all the currently running statements. */
 Datum pg_show_plans(PG_FUNCTION_ARGS);
 
 PG_FUNCTION_INFO_V1(pg_show_plans);
+PG_FUNCTION_INFO_V1(pg_show_plans_enable);
+PG_FUNCTION_INFO_V1(pg_show_plans_disable);
 
 /* Global Variables */
 /* Shared extension state. */
@@ -413,6 +420,19 @@ pgsp_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction,
 	PG_END_TRY();
 }
 
+Datum
+pg_show_plans_enable(PG_FUNCTION_ARGS)
+{
+	pgsp->is_enabled = true;
+	PG_RETURN_VOID();
+}
+
+Datum
+pg_show_plans_disable(PG_FUNCTION_ARGS)
+{
+	pgsp->is_enabled = false;
+	PG_RETURN_VOID();
+}
 Datum
 pg_show_plans(PG_FUNCTION_ARGS)
 {

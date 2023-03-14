@@ -12,18 +12,19 @@
 
 /* Includes */
 #include "postgres.h"
-/* Comments just indicate which includes are still in use. */
-#include "commands/explain.h" /* To explain statements. */
-#include "fmgr.h"             /* PG_RETURN_VOID() */
-#include "funcapi.h"          /* To return sets in SQL funcs. */
-#include "lib/stringinfo.h"   /* StringInfo */
-#include "miscadmin.h"        /* process_shared_preload_libraries_in_progress */
-#include "storage/ipc.h"      /* shmem_startup_hook_type */
-#include "storage/lwlock.h"   /* Locking mechanism, for shared data safety. */
-#include "storage/shmem.h"    /* RequestAddinShmemSpace() */
-#include "utils/builtins.h"   /* CStringGetTextDatum() */
-#include "utils/guc.h"        /* For GUC variables. */
 
+#include "catalog/pg_authid.h"
+#include "commands/explain.h"
+#include "fmgr.h"
+#include "funcapi.h"
+#include "lib/stringinfo.h"
+#include "miscadmin.h"
+#include "storage/ipc.h"
+#include "storage/lwlock.h"
+#include "storage/shmem.h"
+#include "utils/acl.h"
+#include "utils/builtins.h"
+#include "utils/guc.h"
 
 /* Constants and Macros */
 PG_MODULE_MAGIC;
@@ -83,6 +84,12 @@ static pgspEntry *create_hash_entry(const pgspHashKey *key);
 static void append_query_plan(ExplainState *es);
 /* on_shmem_exit() callback to delete hash entry on client disconnect. */
 static void cleanup(int code, Datum arg);
+/* Set extension state, either enable or disable. */
+static void set_state(const bool state);
+/* Set query plan output format: text, json, ... */
+static void set_format(const int format);
+/* Check whether the user has required privileges. */
+static bool is_allowed_role(void);
 /* Hook functions. */
 /* Ask for shared memory. */
 #if PG_VERSION_NUM >= 150000
@@ -314,6 +321,33 @@ void cleanup(int code, Datum arg)
 	LWLockRelease(pgsp->lock);
 }
 
+void
+set_state(const bool state)
+{
+	if (is_allowed_role())
+		pgsp->is_enabled = state;
+}
+
+void
+set_format(const int format)
+{
+	if (is_allowed_role())
+		pgsp->plan_format = format;
+}
+
+bool
+is_allowed_role(void)
+{
+	bool is_allowed_role = false;
+#if PG_VERSION_NUM >= 140000
+	is_allowed_role = is_member_of_role(GetUserId(), ROLE_PG_READ_ALL_STATS);
+#else
+	is_allowed_role = is_member_of_role(GetUserId(), DEFAULT_ROLE_READ_ALL_STATS);
+#endif
+	return is_allowed_role;
+
+}
+
 #if PG_VERSION_NUM >= 150000
 void
 pgvp_shmem_request(void)
@@ -431,42 +465,42 @@ pgsp_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction,
 Datum
 pg_show_plans_enable(PG_FUNCTION_ARGS)
 {
-	pgsp->is_enabled = true;
+	set_state(true);
 	PG_RETURN_VOID();
 }
 
 Datum
 pg_show_plans_disable(PG_FUNCTION_ARGS)
 {
-	pgsp->is_enabled = false;
+	set_state(false);
 	PG_RETURN_VOID();
 }
 
 Datum
 pgsp_format_text(PG_FUNCTION_ARGS)
 {
-	pgsp->plan_format = EXPLAIN_FORMAT_TEXT;
+	set_format(EXPLAIN_FORMAT_TEXT);
 	PG_RETURN_VOID();
 }
 
 Datum
 pgsp_format_json(PG_FUNCTION_ARGS)
 {
-	pgsp->plan_format = EXPLAIN_FORMAT_JSON;
+	set_format(EXPLAIN_FORMAT_JSON);
 	PG_RETURN_VOID();
 }
 
 Datum
 pgsp_format_yaml(PG_FUNCTION_ARGS)
 {
-	pgsp->plan_format = EXPLAIN_FORMAT_YAML;
+	set_format(EXPLAIN_FORMAT_YAML);
 	PG_RETURN_VOID();
 }
 
 Datum
 pgsp_format_xml(PG_FUNCTION_ARGS)
 {
-	pgsp->plan_format = EXPLAIN_FORMAT_XML;
+	set_format(EXPLAIN_FORMAT_XML);
 	PG_RETURN_VOID();
 }
 
@@ -530,8 +564,15 @@ pg_show_plans(PG_FUNCTION_ARGS)
 		if (is_done) /* Done processing a hash entry? */
 		{ /* Grab a new one. */
 			pgvp_tmp_entry = hash_seq_search(hash_seq);
-			/* Skip empty entries. */
-			while (pgvp_tmp_entry->n_plans < 1) {
+			/* Skip empty entries and the ones the user is not
+			 * allowed to see. */
+			for (;;) {
+				if (pgvp_tmp_entry->n_plans >= 1) {
+					if (is_allowed_role())
+						break;
+					else if (pgvp_tmp_entry->user_id == GetUserId())
+						break;
+				}
 				if (call_cntr == max_calls-1) { /* No more entries. */
 					hash_seq_term(hash_seq);
 					LWLockRelease(pgsp->lock);

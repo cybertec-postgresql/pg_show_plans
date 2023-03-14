@@ -3,7 +3,7 @@
 PostgreSQL extension that shows query plans of all the currently running SQL
 statements.
 
-Plan output format can either be plain TEXT (default), or JSON.
+Plan output format can be plain TEXT (default), JSON, YAML, or XML.
 
 ### NOTE
 
@@ -19,7 +19,7 @@ There are several ways of doing it...
 ```
 git clone https://github.com/cybertec-postgresql/pg_show_plans.git
 cd pg_show_plans
-USE_PGXS=true # `pg_config` binary must be in your $PATH (install Postgres).
+USE_PGXS=1 # `pg_config` binary must be in your $PATH (install Postgres).
 make
 sudo make install
 ```
@@ -27,7 +27,7 @@ sudo make install
 ## Within PostgreSQL source tree:
 
 ```
-PG_VER='15.1' # Export the required PostgreSQL version.
+PG_VER='15.1' # Set the required PostgreSQL version.
 curl -O "https://download.postgresql.org/pub/source/v${PG_VER}/postgresql-${PG_VER}.tar.bz2"
 tar xvfj "postgresql-${PG_VER}.tar.bz2"
 cd postgresql-${PG_VER}
@@ -119,16 +119,16 @@ query |
  - *pg_show_plans_disable()* disables the feature. Only superuser can execute
    it.
  - *pg_show_plans_enable()* enables the feature. Only superuser can execute it.
- - *pgsp_format_json()* changes the output format to `json`. Note that the
-   format of the plans that are stored in the memory before executing this
-   function cannot be changed.
  - *pgsp_format_text()* changes the output format to `text`. Note that the
    format of the plans that are stored in the memory before executing this
    function cannot be changed.
+ - *pgsp_format_json()* changes the output format to `json`.
+ - *pgsp_format_yaml()* changes the output format to `yaml`.
+ - *pgsp_format_xml()* changes the output format to `xml`.
 
 # CONFIGURATION
  - *pg_show_plans.plan_format* : It controls the output format of query plans.
-   It can be selected either `text` or `json`. Default is `text`.
+   It can be selected `text`, `json`, `yaml`, `xml`. Default is `text`.
  - *pg_show_plans.max_plan_length* : It sets the maximum length of query plans.
    Default is `16384` [byte]. Note that this parameter must be set to an
    integer. Note that pg_show plans allocates approximately (max_plan_length *
@@ -137,21 +137,3 @@ query |
    out of memory error.
  - *pg_show_plans.enable* : It controls whether this feature is enabled or not
    in each user. Default is 'true'.
-
-# CHANGELOG
-
- - 22 Mar, 2022: Version 1.0 Released.
- - 22 Mar, 2022: Improved memory utilization efficiency and obsoleted a
-   parameter:pg_show_plans.enable_txid.
- - 30 Aug, 2021: Added a parameter:pg_show_plans.enable_txid.
- - 4 Feb, 2021: Added a parameter:pg_show_plans.enable.
- - 19 Oct, 2020: Confirmed this can be run on PostgreSQL 13.0.
- - 10 Apr, 2020: Version 1.0 RC3 Released. Supported Streaming Replication.
-   This extension can be run on the standby server since this version.
- - 26 Mar, 2020: Version 1.0 RC2 Released. Added pgsp_format_json() and
-   pgsp_format_text(); deleted the parameter `show_level`.
- - 21 Dec, 2019: Version 1.0 RC Released. Supported versions from 9.1 to 9.4.
- - 16 Aug, 2019: Version 0.8 Released. Supported the parameter:max_plan_length.
- - 12 Aug, 2019: Version 0.3 Released. Supported garbage collection.
- - 9 Aug, 2019: Version 0.2 Released. Supported nested queries.
- - 8 Aug, 2019: Version 0.1 Released.

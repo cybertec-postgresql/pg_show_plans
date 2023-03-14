@@ -52,9 +52,9 @@ typedef struct pgspEntry /* Hash table entry. */
 
 typedef struct pgspSharedState /* Shared state of the extension. */
 {
-	LWLock *lock;    /* Protects shared hash table. */
-	bool is_enabled; /* Enables or disables the extension. */
-	int plan_format;
+	LWLock *lock;       /* Protects shared hash table. */
+	bool    is_enabled; /* Enables or disables the extension. */
+	int     plan_format;
 } pgspSharedState;
 
 typedef struct pgspCtx { /* Used as `funcctx->user_fctx` in pg_show_plans(). */

@@ -139,7 +139,7 @@ _PG_init(void)
 	if (!process_shared_preload_libraries_in_progress)
 		return;
 
-	DefineCustomBoolVariable("pg_show_plans.start_enabled",
+	DefineCustomBoolVariable("pg_show_plans.is_enabled",
 	                         "Start with the extension enabled?",
 	                         NULL,
 	                         &start_enabled,

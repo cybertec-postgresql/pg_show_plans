@@ -95,16 +95,24 @@ static void pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags);
 static void pgsp_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction,
                              uint64 count, bool execute_once);
 
-/* Enables the extension. */
+/* Enables/Disables the extension. */
 Datum pg_show_plans_enable(PG_FUNCTION_ARGS);
-/* Disables the extension. */
 Datum pg_show_plans_disable(PG_FUNCTION_ARGS);
+/* Sets query plan output format. */
+Datum pgsp_format_text(PG_FUNCTION_ARGS);
+Datum pgsp_format_json(PG_FUNCTION_ARGS);
+Datum pgsp_format_yaml(PG_FUNCTION_ARGS);
+Datum pgsp_format_xml(PG_FUNCTION_ARGS);
 /* Show query plans of all the currently running statements. */
 Datum pg_show_plans(PG_FUNCTION_ARGS);
 
-PG_FUNCTION_INFO_V1(pg_show_plans);
 PG_FUNCTION_INFO_V1(pg_show_plans_enable);
 PG_FUNCTION_INFO_V1(pg_show_plans_disable);
+PG_FUNCTION_INFO_V1(pgsp_format_text);
+PG_FUNCTION_INFO_V1(pgsp_format_json);
+PG_FUNCTION_INFO_V1(pgsp_format_yaml);
+PG_FUNCTION_INFO_V1(pgsp_format_xml);
+PG_FUNCTION_INFO_V1(pg_show_plans);
 
 /* Global Variables */
 /* Shared extension state. */
@@ -433,6 +441,35 @@ pg_show_plans_disable(PG_FUNCTION_ARGS)
 	pgsp->is_enabled = false;
 	PG_RETURN_VOID();
 }
+
+Datum
+pgsp_format_text(PG_FUNCTION_ARGS)
+{
+	pgsp->plan_format = EXPLAIN_FORMAT_TEXT;
+	PG_RETURN_VOID();
+}
+
+Datum
+pgsp_format_json(PG_FUNCTION_ARGS)
+{
+	pgsp->plan_format = EXPLAIN_FORMAT_JSON;
+	PG_RETURN_VOID();
+}
+
+Datum
+pgsp_format_yaml(PG_FUNCTION_ARGS)
+{
+	pgsp->plan_format = EXPLAIN_FORMAT_YAML;
+	PG_RETURN_VOID();
+}
+
+Datum
+pgsp_format_xml(PG_FUNCTION_ARGS)
+{
+	pgsp->plan_format = EXPLAIN_FORMAT_XML;
+	PG_RETURN_VOID();
+}
+
 Datum
 pg_show_plans(PG_FUNCTION_ARGS)
 {

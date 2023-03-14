@@ -14,22 +14,32 @@ RETURNS void
 AS 'MODULE_PATHNAME'
 LANGUAGE C;
 
-CREATE FUNCTION pgsp_format_json()
-RETURNS void
-AS 'MODULE_PATHNAME'
-LANGUAGE C;
-
 CREATE FUNCTION pgsp_format_text()
 RETURNS void
 AS 'MODULE_PATHNAME'
 LANGUAGE C;
 
+CREATE FUNCTION pgsp_format_json()
+RETURNS void
+AS 'MODULE_PATHNAME'
+LANGUAGE C;
+
+CREATE FUNCTION pgsp_format_yaml()
+RETURNS void
+AS 'MODULE_PATHNAME'
+LANGUAGE C;
+
+CREATE FUNCTION pgsp_format_xml()
+RETURNS void
+AS 'MODULE_PATHNAME'
+LANGUAGE C;
+
 CREATE FUNCTION pg_show_plans(
-    OUT pid int8,
-    OUT level int8,
-    OUT userid oid,
-    OUT dbid oid,
-    OUT plan text
+	OUT pid int8,
+	OUT level int8,
+	OUT userid oid,
+	OUT dbid oid,
+	OUT plan text
 )
 RETURNS SETOF record
 AS 'MODULE_PATHNAME'
@@ -37,12 +47,14 @@ LANGUAGE C;
 
 -- Register a view on the function for ease of use.
 CREATE VIEW pg_show_plans AS
-  SELECT * FROM pg_show_plans();
+	SELECT * FROM pg_show_plans();
 
 GRANT SELECT ON pg_show_plans TO PUBLIC;
 
 -- Don't want this to be available to non-superusers.
 REVOKE ALL ON FUNCTION pg_show_plans_enable() FROM PUBLIC;
 REVOKE ALL ON FUNCTION pg_show_plans_disable() FROM PUBLIC;
-REVOKE ALL ON FUNCTION pgsp_format_json() FROM PUBLIC;
 REVOKE ALL ON FUNCTION pgsp_format_text() FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgsp_format_json() FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgsp_format_yaml() FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgsp_format_xml() FROM PUBLIC;

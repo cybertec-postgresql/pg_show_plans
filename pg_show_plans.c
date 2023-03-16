@@ -154,6 +154,7 @@ static const struct config_enum_entry plan_formats[] =
 	{"json", EXPLAIN_FORMAT_JSON, false},
 	{"yaml", EXPLAIN_FORMAT_YAML, false},
 	{"xml",  EXPLAIN_FORMAT_XML,  false},
+	{NULL, 0, false}
 };
 
 void

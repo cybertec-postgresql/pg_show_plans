@@ -459,20 +459,22 @@ pgsp_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction,
 			standard_ExecutorRun(queryDesc, direction, count, execute_once);
 
 		nest_level--;
-		/* Wait for reading to complete, the delete. */
-		SpinLockAcquire(&pgsp_cache->mutex);
-		if (nest_level < 1) /* Mark hash entry as empty. */
+		/* Wait for reading to complete, then delete. */
+		if (nest_level < 1) { /* Mark hash entry as empty. */
+			SpinLockAcquire(&pgsp_cache->mutex);
 			pgsp_cache->n_plans = 0;
-		SpinLockRelease(&pgsp_cache->mutex);
+			SpinLockRelease(&pgsp_cache->mutex);
+		}
 	}
 	PG_CATCH(); /* Since 13 PG_FINALLY() is available. */
 	{
 		nest_level--;
-		/* Wait for reading to complete, the delete. */
-		SpinLockAcquire(&pgsp_cache->mutex);
-		if (nest_level < 1) /* Mark hash entry as empty. */
+		/* Wait for reading to complete, then delete. */
+		if (nest_level < 1) { /* Mark hash entry as empty. */
+			SpinLockAcquire(&pgsp_cache->mutex);
 			pgsp_cache->n_plans = 0;
-		SpinLockRelease(&pgsp_cache->mutex);
+			SpinLockRelease(&pgsp_cache->mutex);
+		}
 
 		PG_RE_THROW();
 	}

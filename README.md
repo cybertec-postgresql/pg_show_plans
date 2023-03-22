@@ -14,13 +14,12 @@ resizable, thus, no new plans can be added once it has been filled up.
 
 There are several ways of doing it...
 
-## Using `pg_confg` (recommended):
+## Using `pg_config` (recommended):
 
 ```
 git clone https://github.com/cybertec-postgresql/pg_show_plans.git
 cd pg_show_plans
-USE_PGXS=1 # `pg_config` binary must be in your $PATH (install Postgres).
-make
+make # `pg_config` binary must be in your $PATH (install Postgres).
 sudo make install
 ```
 

@@ -135,5 +135,5 @@ query |
    max_connecions) bytes on the shared memory to store plans, Therefore, if the
    value of max_plan_length is too large, PostgreSQL may not start due to an
    out of memory error.
- - *pg_show_plans.enable* : It controls whether this feature is enabled or not
-   in each user. Default is 'true'.
+ - *pg_show_plans.is_enabled* : It controls whether the extension starts
+   enabled. Default is `true`

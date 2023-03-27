@@ -173,3 +173,11 @@ select * from nest();
        | </explain>
 (2 rows)
 
+-- check plan format after reconnect
+\c
+show pg_show_plans.plan_format;
+ pg_show_plans.plan_format 
+---------------------------
+ xml
+(1 row)
+

@@ -34,3 +34,7 @@ select * from nest();
 select pgsp_format_xml();
 show pg_show_plans.plan_format;
 select * from nest();
+
+-- check plan format after reconnect
+\c
+show pg_show_plans.plan_format;

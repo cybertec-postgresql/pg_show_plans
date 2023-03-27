@@ -86,8 +86,10 @@ static void append_query_plan(ExplainState *es);
 static void cleanup(int code, Datum arg);
 /* Set extension state, either enable or disable. */
 static void set_state(const bool state);
+static const char *show_state(void);
 /* Set query plan output format: text, json, ... */
 static void set_format(const int format);
+static const char *show_format(void);
 /* Check the extension has been properly loaded. */
 static inline void shmem_safety_check(void);
 /* Check whether the user has required privileges. */
@@ -171,7 +173,7 @@ _PG_init(void)
 	                         true,
 	                         PGC_POSTMASTER,
 	                         0,
-	                         NULL, NULL, NULL);
+	                         NULL, NULL, show_state);
 	DefineCustomIntVariable("pg_show_plans.max_plan_length",
 	                        gettext_noop("Set the maximum plan length. "
 	                                     "Note that this module allocates (max_plan_length*max_connections) "
@@ -195,7 +197,7 @@ _PG_init(void)
 	                         plan_formats,
 	                         PGC_POSTMASTER,
 	                         0,
-	                         NULL, NULL, NULL);
+	                         NULL, NULL, show_format);
 
 	/* Save old hooks, and install new ones. */
 #if PG_VERSION_NUM >= 150000
@@ -332,12 +334,38 @@ set_state(const bool state)
 		pgsp->is_enabled = state;
 }
 
+/* since we can't update start_enabled in running backends, provide a show hook
+ * that reads the value from shared memory */
+static const char *
+show_state()
+{
+	if (pgsp->is_enabled)
+		return "on";
+	else
+		return "off";
+}
+
 void
 set_format(const int format)
 {
 	shmem_safety_check();
 	if (is_allowed_role())
 		pgsp->plan_format = format;
+}
+
+static const char *
+show_format()
+{
+	if (pgsp->plan_format == EXPLAIN_FORMAT_TEXT)
+		return "text";
+	else if (pgsp->plan_format == EXPLAIN_FORMAT_JSON)
+		return "json";
+	else if (pgsp->plan_format == EXPLAIN_FORMAT_YAML)
+		return "yaml";
+	else if (pgsp->plan_format == EXPLAIN_FORMAT_XML)
+		return "xml";
+	else
+		elog(ERROR, "unexpected plan_format value: %d", pgsp->plan_format);
 }
 
 inline void

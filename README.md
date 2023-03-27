@@ -5,6 +5,8 @@ statements.
 
 Plan output format can be plain TEXT (default), JSON, YAML, or XML.
 
+PostgreSQL versions 12 and later are supported.
+
 ### NOTE
 
 This extension creates a hash table within shared memory. The hash table is not

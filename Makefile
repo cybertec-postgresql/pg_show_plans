@@ -5,7 +5,7 @@ OBJS = pg_show_plans.o
 
 EXTENSION = pg_show_plans
 DATA = pg_show_plans--1.0.sql
-REGRESS = pg_show_plans
+REGRESS = pg_show_plans formats
 
 USE_PGXS = 1
 ifdef USE_PGXS

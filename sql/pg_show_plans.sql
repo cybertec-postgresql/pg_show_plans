@@ -19,22 +19,4 @@ show pg_show_plans.plan_format;
 select level, plan from pg_show_plans;
 select * from nest();
 
--- json output
 set pg_show_plans.plan_format = 'json'; -- fails
-select pgsp_format_json();
-show pg_show_plans.plan_format;
-select * from nest();
-
--- yaml output
-select pgsp_format_yaml();
-show pg_show_plans.plan_format;
-select * from nest();
-
--- xml output
-select pgsp_format_xml();
-show pg_show_plans.plan_format;
-select * from nest();
-
--- check plan format after reconnect
-\c
-show pg_show_plans.plan_format;

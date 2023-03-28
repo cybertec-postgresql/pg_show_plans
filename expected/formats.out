@@ -31,7 +31,7 @@ select * from nest();
        |     "Startup Cost": 0.25,            +
        |     "Total Cost": 10.25,             +
        |     "Plan Rows": 1000,               +
-       |     "Plan Width": 40                 +
+       |     "Plan Width": 36                 +
        |   }                                  +
        | ]
      1 | [                                    +
@@ -44,7 +44,7 @@ select * from nest();
        |     "Startup Cost": 0.00,            +
        |     "Total Cost": 12.50,             +
        |     "Plan Rows": 333,                +
-       |     "Plan Width": 40,                +
+       |     "Plan Width": 36,                +
        |     "Filter": "(level >= 0)"         +
        |   }                                  +
        | ]
@@ -75,7 +75,7 @@ select * from nest();
        |   Startup Cost: 0.25            +
        |   Total Cost: 10.25             +
        |   Plan Rows: 1000               +
-       |   Plan Width: 40
+       |   Plan Width: 36
      1 | Plan:                           +
        |   Node Type: "Function Scan"    +
        |   Parallel Aware: false         +
@@ -85,7 +85,7 @@ select * from nest();
        |   Startup Cost: 0.00            +
        |   Total Cost: 12.50             +
        |   Plan Rows: 333                +
-       |   Plan Width: 40                +
+       |   Plan Width: 36                +
        |   Filter: "(level >= 0)"
 (2 rows)
 
@@ -115,7 +115,7 @@ select * from nest();
        |     <Startup-Cost>0.25</Startup-Cost>                   +
        |     <Total-Cost>10.25</Total-Cost>                      +
        |     <Plan-Rows>1000</Plan-Rows>                         +
-       |     <Plan-Width>40</Plan-Width>                         +
+       |     <Plan-Width>36</Plan-Width>                         +
        |   </Plan>                                               +
        | </explain>
      1 | <explain xmlns="http://www.postgresql.org/2009/explain">+
@@ -128,7 +128,7 @@ select * from nest();
        |     <Startup-Cost>0.00</Startup-Cost>                   +
        |     <Total-Cost>12.50</Total-Cost>                      +
        |     <Plan-Rows>333</Plan-Rows>                          +
-       |     <Plan-Width>40</Plan-Width>                         +
+       |     <Plan-Width>36</Plan-Width>                         +
        |     <Filter>(level &gt;= 0)</Filter>                    +
        |   </Plan>                                               +
        | </explain>

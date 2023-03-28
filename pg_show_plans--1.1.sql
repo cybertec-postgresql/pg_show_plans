@@ -35,8 +35,8 @@ AS 'MODULE_PATHNAME'
 LANGUAGE C;
 
 CREATE FUNCTION pg_show_plans(
-	OUT pid int8,
-	OUT level int8,
+	OUT pid int,
+	OUT level int,
 	OUT userid oid,
 	OUT dbid oid,
 	OUT plan text

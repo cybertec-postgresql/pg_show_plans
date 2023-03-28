@@ -4,7 +4,7 @@ show pg_show_plans.is_enabled;
 show pg_show_plans.max_plan_length;
 
 create function nest()
-  returns table (level bigint, plan text)
+  returns table (level int, plan text)
   language plpgsql
 as $$
   begin

@@ -19,12 +19,13 @@ CREATE VIEW pg_show_plans AS
 
 GRANT SELECT ON pg_show_plans TO PUBLIC;
 
-CREATE FUNCTION pgsp_format_yaml()
+-- Some 1.0 versions already contained yaml/xml, use "or replace" here
+CREATE OR REPLACE FUNCTION pgsp_format_yaml()
 RETURNS void
 AS 'MODULE_PATHNAME'
 LANGUAGE C;
 
-CREATE FUNCTION pgsp_format_xml()
+CREATE OR REPLACE FUNCTION pgsp_format_xml()
 RETURNS void
 AS 'MODULE_PATHNAME'
 LANGUAGE C;

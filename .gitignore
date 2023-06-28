@@ -7,3 +7,6 @@ compile_commands.json
 *.bc
 *.o
 *.so
+
+# Regression Tests Output
+results/

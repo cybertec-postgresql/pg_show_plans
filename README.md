@@ -1,34 +1,32 @@
 # pg_show_plans
 
 PostgreSQL extension that shows query plans of all the currently running SQL
-statements.
+statements. Query plans can be shown in several formats, like `JSON`.
 
-Plan output format can be plain TEXT (default), JSON, YAML, or XML.
-
-PostgreSQL versions 12 and later are supported.
-
-### NOTE
-
-This extension creates a hash table within shared memory. The hash table is not
-resizable, thus, no new plans can be added once it has been filled up.
+*This extension creates a hash table within shared memory. The hash table is
+not resizable, thus, no new plans can be added once it has been filled up.*
 
 # INSTALL
 
-There are several ways of doing it...
+Either use PGXS infrastructure (recommended), or compile within the source
+tree. PostgreSQL versions 12 and newer are supported.
 
-## Using `pg_config` (recommended):
+## PGXS
 
-```
+Install PostgreSQL before proceeding. Make sure to have `pg_config` binary,
+these are typically included in `-dev` and `-devel` packages.
+
+```bash
 git clone https://github.com/cybertec-postgresql/pg_show_plans.git
 cd pg_show_plans
-make # `pg_config` binary must be in your $PATH (install Postgres).
-sudo make install
+make
+make install
 ```
 
-## Within PostgreSQL source tree:
+## Within Source Tree:
 
-```
-PG_VER='15.1' # Set the required PostgreSQL version.
+```bash
+PG_VER='15.3' # Set the required PostgreSQL version.
 curl -O "https://download.postgresql.org/pub/source/v${PG_VER}/postgresql-${PG_VER}.tar.bz2"
 tar xvfj "postgresql-${PG_VER}.tar.bz2"
 cd postgresql-${PG_VER}
@@ -37,27 +35,29 @@ cd postgresql-${PG_VER}
 cd contrib
 git clone https://github.com/cybertec-postgresql/pg_show_plans.git
 cd pg_show_plans
-make
-sudo make install
+make USE_PGXS=
+make USE_PGXS= install
 ```
 
-# USAGE
+## Configure
 
 Add `pg_show_plans` to `shared_preload_libraries` within `postgresql.conf`:
 
 ```
-shared_preload_libraries = 'pg_show_plans' # Like that.
+shared_preload_libraries = 'pg_show_plans'
 ```
 
-Start the server, and invoke `CREATE EXTENSION pg_show_plans;`:
+Restart the server, and invoke `CREATE EXTENSION pg_show_plans;`:
 
 ```
-postgresql=# CREATE EXTENSION pg_show_plans; # Like that.
+postgresql=# CREATE EXTENSION pg_show_plans;
 CREATE EXTENSION
 postgresql=#
 ```
 
-To get the query plans along with relevant information:
+# USAGE
+
+To see the query plans:
 
 ```
 testdb=# SELECT * FROM pg_show_plans;
@@ -69,7 +69,7 @@ testdb=# SELECT * FROM pg_show_plans;
 (3 rows)
 ```
 
-To get the plans and see the corresponding query expression:
+To get query plans and see the corresponding query expression:
 
 ```
 testdb=# \x
@@ -105,36 +105,38 @@ query |
 
 ```
 
-# pg_show_plans VIEW
- - *pid*: the pid of the process which the query is running.
- - *level*: the level of the query which runs the query. Top level is `0`. For
-   example, if you execute a simple select query, the level of this query's
-   plan is 0. If you execute a function that invokes a select query, level 0 is
-   the plan of the function and level 1 is the plan of the select query invoked
-   by the function.
- - *userid*: the userid of the user which runs the query.
- - *dbid*: the database id of the database which the query is running.
- - *plan*: the query plan of the running query.
+# DOCUMENTATION
 
-# FUNCTIONs
- - *pg_show_plans_disable()* disables the feature. Only superuser can execute
-   it.
- - *pg_show_plans_enable()* enables the feature. Only superuser can execute it.
- - *pgsp_format_text()* changes the output format to `text`. Note that the
-   format of the plans that are stored in the memory before executing this
-   function cannot be changed.
- - *pgsp_format_json()* changes the output format to `json`.
- - *pgsp_format_yaml()* changes the output format to `yaml`.
- - *pgsp_format_xml()* changes the output format to `xml`.
+## GUC Variables
 
-# CONFIGURATION
- - *pg_show_plans.plan_format* : It controls the output format of query plans.
-   It can be selected `text`, `json`, `yaml`, `xml`. Default is `text`.
- - *pg_show_plans.max_plan_length* : It sets the maximum length of query plans.
-   Default is `16384` [byte]. Note that this parameter must be set to an
-   integer. Note that pg_show plans allocates approximately (max_plan_length *
-   max_connecions) bytes on the shared memory to store plans, Therefore, if the
-   value of max_plan_length is too large, PostgreSQL may not start due to an
-   out of memory error.
- - *pg_show_plans.is_enabled* : It controls whether the extension starts
-   enabled. Default is `true`
+* `pg_show_plans.plan_format = text`: query plans output format, either of
+  `text`, `json`, `yaml`, and `xml`.
+* `pg_show_plans.max_plan_length = 16384`: query plan maximal length in bytes.
+  This value affects the amount of shared memory the extension asks for, the
+  server may not start if the value is too high.
+* `pg_show_plans.is_enabled = true`: whether the extension is enabled at
+  server start up.
+
+*Default values are shown after '=' sign.*
+
+## VIEWS
+
+* `pg_show_plans`: defined as `SELECT * FROM pg_show_plans();`.
+
+## FUNCTIONS
+
+* `pg_show_plans()`: show query plans:
+  - `pid`: server process ID that runs the query.
+  - `level`: query nest level. Top level is 0. For example, if you execute a
+    simple select query, the level of this query's plan is 0. If you execute a
+    function that invokes a select query, level 0 is the plan of the function
+    and level 1 is the plan of the select query invoked by the function.
+  - `userid`: user ID who runs the query.
+  - `dbid`: database ID the query runs in.
+  - `plan`: query plan.
+* `pg_show_plans_disable()`: disable extension.
+* `pg_show_plans_enable()`: enable extension.
+* `pgsp_format_text()`: changes query format to `json`.
+* `pgsp_format_json()`: changes query format to `json`.
+* `pgsp_format_yaml()`: changes query format to `yaml`.
+* `pgsp_format_xml()`: changes query format to `xml`.

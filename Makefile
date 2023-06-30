@@ -1,5 +1,3 @@
-# pg_show_plans/Makefile
-
 MODULE_big = pg_show_plans
 OBJS = pg_show_plans.o
 

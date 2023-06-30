@@ -23,7 +23,7 @@ make
 make install
 ```
 
-## Within Source Tree:
+## Within Source Tree
 
 ```bash
 PG_VER='15.3' # Set the required PostgreSQL version.
@@ -119,11 +119,11 @@ query |
 
 *Default values are shown after '=' sign.*
 
-## VIEWS
+## Views
 
 * `pg_show_plans`: defined as `SELECT * FROM pg_show_plans();`.
 
-## FUNCTIONS
+## Functions
 
 * `pg_show_plans()`: show query plans:
   - `pid`: server process ID that runs the query.

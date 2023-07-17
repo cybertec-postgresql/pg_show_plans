@@ -12,7 +12,7 @@
 
 Summary:	A PostgreSQL extension that shows query plans of all the currently running SQL statements.
 Name:		%{sname}_%{pgmajorversion}
-Version:	1.1.3
+Version:	1.1.4
 Release:	2%{?dist}.1
 License:	PostgreSQL
 Source0:	https://github.com/cybertec-postgresql/%{sname}/archive/%{version}/%{sname}-%{version}.tar.gz
@@ -70,7 +70,7 @@ PATH=%{pginstdir}/bin/:$PATH %{__make} %{?_smp_mflags} install DESTDIR=%{buildro
 %{pginstdir}/share/extension/%{sname}*.sql
 %{pginstdir}/share/extension/%{sname}.control
 %{pginstdir}/lib/%{sname}.so
-%doc %{pginstdir}/doc/extension/README-%{sname}.md
+%doc %{pginstdir}/doc/extension/%{sname}.md
 
 %if %llvm
 %files llvmjit
@@ -79,5 +79,5 @@ PATH=%{pginstdir}/bin/:$PATH %{__make} %{?_smp_mflags} install DESTDIR=%{buildro
 %endif
 
 %changelog
-* Mon Nov 5 2018 Ivan Kovmir <ivan.kovmir@cybertec.at> - 1.1.3-1
+* Mon Nov 5 2018 Ivan Kovmir <ivan.kovmir@cybertec.at> - 1.1.4-1
 - Initial RPM packaging

@@ -15,7 +15,6 @@ Name:		%{sname}_%{pgmajorversion}
 Version:	1.1.4
 Release:	2%{?dist}.1
 License:	PostgreSQL
-Source0:	https://github.com/cybertec-postgresql/%{sname}/archive/%{version}/%{sname}-%{version}.tar.gz
 URL:		https://github.com/cybertec-postgresql/%{sname}
 BuildRequires:	postgresql%{pgmajorversion}-devel pgdg-srpm-macros
 Requires:	postgresql%{pgmajorversion}-server
@@ -52,7 +51,6 @@ This packages provides JIT support for %{sname}
 %endif
 
 %prep
-%setup -q -n %{sname}-%{version}
 
 %build
 PATH=%{pginstdir}/bin/:$PATH %{__make} %{?_smp_mflags}

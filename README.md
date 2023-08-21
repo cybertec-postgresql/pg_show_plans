@@ -105,7 +105,7 @@ query |
 
 ```
 
-# DOCUMENTATION
+# REFERENCE
 
 ## GUC Variables
 

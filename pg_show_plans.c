@@ -377,7 +377,7 @@ shmem_safety_check(void)
 	ereport(ERROR,
 	        (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 	         errmsg("pg_show_plans must be loaded"
-	                "via shared_preload_libraries")));
+	                " via shared_preload_libraries")));
 }
 
 bool

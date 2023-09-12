@@ -292,9 +292,7 @@ append_query_plan(ExplainState *es)
 
 	offset = 0;
 	for (i = 0; i < nest_level; i++)
-		offset += pgsp_cache->plan_len[i];
-	if (nest_level >= 1)
-		offset++; /* Point right after the '\0'. */
+		offset += pgsp_cache->plan_len[i] + 1;
 	space_left = max_plan_length - offset;
 
 	if (pgsp->plan_format == EXPLAIN_FORMAT_TEXT)
@@ -637,9 +635,7 @@ pg_show_plans(PG_FUNCTION_ARGS)
 		 * count offset to get the desired plan. */
 		offset = 0;
 		for (i = 0; i < curr_nest; i++)
-			offset += pgvp_tmp_entry->plan_len[i];
-		if (offset > 0)
-			offset++;
+			offset += pgvp_tmp_entry->plan_len[i] + 1;
 
 		MemSet(nulls, 0, sizeof(nulls));
 		values[0] = Int32GetDatum(pgvp_tmp_entry->hash_key.pid);

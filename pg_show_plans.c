@@ -299,7 +299,6 @@ append_query_plan(ExplainState *es)
 		new_plan->len--; /* Discard '\n'. */
 
 	if (new_plan->len < space_left) { /* Enough space for a new plan. */
-		/* -1 to dispose of '\n'. */
 		memcpy(pgsp_cache->plan + offset,
 		       new_plan->data, new_plan->len);
 		pgsp_cache->plan[offset + new_plan->len] = '\0';

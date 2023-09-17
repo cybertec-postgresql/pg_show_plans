@@ -13,7 +13,7 @@ Homepage: https://github.com/cybertec-postgresql/pg_show_plans
 Vcs-Browser: https://github.com/cybertec-postgresql/pg_show_plans
 Vcs-Git: https://github.com/cybertec-postgresql/pg_show_plans.git
 
-Package: postgresql-15-show-plans
+Package: postgresql-16-show-plans
 Architecture: any
 Depends:
  ${misc:Depends},

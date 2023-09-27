@@ -365,7 +365,7 @@ show_format()
 		elog(ERROR, "unexpected plan_format value: %d", pgsp->plan_format);
 }
 
-inline void
+static inline void
 shmem_safety_check(void)
 {
 	if (pgsp && pgsp_hash)

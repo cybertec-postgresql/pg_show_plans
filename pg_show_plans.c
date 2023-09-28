@@ -217,13 +217,13 @@ _PG_init(void)
 	ExecutorRun_hook = pgsp_ExecutorRun;     /* Track nest level. */
 }
 
-Size
+static Size
 hash_entry_size(void)
 {	/* Structure size & variable array maximal length. */
 	return offsetof(pgspEntry, plan) + max_plan_length;
 }
 
-Size
+static Size
 shmem_required(void)
 {
 	Size s;
@@ -233,14 +233,14 @@ shmem_required(void)
 	return s;
 }
 
-uint32
+static uint32
 gen_hash_key(const void *key, Size keysize)
 {
 	const pgspHashKey *k = (const pgspHashKey *) key;
 	return (uint32) k->pid;
 }
 
-int
+static int
 compare_hash_key(const void *key1, const void *key2, Size keysize)
 {
 	const pgspHashKey *k1 = (const pgspHashKey *) key1;
@@ -248,7 +248,7 @@ compare_hash_key(const void *key1, const void *key2, Size keysize)
 	return (k1->pid == k2->pid) ? 0 : 1;
 }
 
-int
+static int
 ensure_cached(void)
 {
 	pgspHashKey pgvp_hash_hey;
@@ -269,7 +269,7 @@ ensure_cached(void)
 }
 
 /* Returns NULL if the hash table is full. */
-pgspEntry *
+static pgspEntry *
 create_hash_entry(const pgspHashKey *key)
 {
 	pgspEntry *entry;
@@ -282,7 +282,7 @@ create_hash_entry(const pgspHashKey *key)
 	return entry;
 }
 
-void
+static void
 append_query_plan(ExplainState *es)
 {
 	const StringInfo new_plan = es->str;
@@ -314,7 +314,8 @@ append_query_plan(ExplainState *es)
 	pgsp_cache->n_plans = nest_level+1;
 }
 
-void cleanup(int code, Datum arg)
+static void
+cleanup(int code, Datum arg)
 {
 	pgspHashKey key;
 	key.pid = pgsp_cache->hash_key.pid;
@@ -323,7 +324,7 @@ void cleanup(int code, Datum arg)
 	LWLockRelease(pgsp->lock);
 }
 
-void
+static void
 set_state(const bool state)
 {
 	shmem_safety_check();
@@ -342,7 +343,7 @@ show_state()
 		return "off";
 }
 
-void
+static void
 set_format(const int format)
 {
 	shmem_safety_check();
@@ -365,7 +366,7 @@ show_format()
 		elog(ERROR, "unexpected plan_format value: %d", pgsp->plan_format);
 }
 
-inline void
+static inline void
 shmem_safety_check(void)
 {
 	if (pgsp && pgsp_hash)
@@ -377,7 +378,7 @@ shmem_safety_check(void)
 	                " via shared_preload_libraries")));
 }
 
-bool
+static bool
 is_allowed_role(void)
 {
 	bool is_allowed_role = false;
@@ -391,7 +392,7 @@ is_allowed_role(void)
 }
 
 #if PG_VERSION_NUM >= 150000
-void
+static void
 pgvp_shmem_request(void)
 {
 	if (prev_shmem_request_hook)
@@ -401,7 +402,7 @@ pgvp_shmem_request(void)
 }
 #endif
 
-void
+static void
 pgsp_shmem_startup(void)
 {
 	bool    found;
@@ -440,7 +441,7 @@ pgsp_shmem_startup(void)
 	LWLockRelease(AddinShmemInitLock);
 }
 
-void
+static void
 pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags)
 {
 	ExplainState *es;
@@ -470,7 +471,7 @@ pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags)
 	pfree(es->str->data);
 }
 
-void
+static void
 pgsp_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction,
                  uint64 count, bool execute_once)
 {

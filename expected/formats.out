@@ -6,12 +6,7 @@ select setting::int < 140000 as pg12_13 from pg_settings where name = 'server_ve
 (1 row)
 
 -- json output
-select pgsp_format_json();
- pgsp_format_json 
-------------------
- 
-(1 row)
-
+set pg_show_plans.plan_format = 'json';
 show pg_show_plans.plan_format;
  pg_show_plans.plan_format 
 ---------------------------
@@ -51,12 +46,7 @@ select * from nest();
 (2 rows)
 
 -- yaml output
-select pgsp_format_yaml();
- pgsp_format_yaml 
-------------------
- 
-(1 row)
-
+set pg_show_plans.plan_format = 'yaml';
 show pg_show_plans.plan_format;
  pg_show_plans.plan_format 
 ---------------------------
@@ -90,12 +80,7 @@ select * from nest();
 (2 rows)
 
 -- xml output
-select pgsp_format_xml();
- pgsp_format_xml 
------------------
- 
-(1 row)
-
+set pg_show_plans.plan_format = 'xml';
 show pg_show_plans.plan_format;
  pg_show_plans.plan_format 
 ---------------------------

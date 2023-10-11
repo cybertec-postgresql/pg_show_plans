@@ -22,6 +22,7 @@ as $$
   end;
 $$;
 -- text output
+set pg_show_plans.plan_format = 'text';
 show pg_show_plans.plan_format;
  pg_show_plans.plan_format 
 ---------------------------
@@ -42,5 +43,3 @@ select * from nest();
        |   Filter: (level >= 0)
 (2 rows)
 
-set pg_show_plans.plan_format = 'json'; -- fails
-ERROR:  parameter "pg_show_plans.plan_format" cannot be changed without restarting the server

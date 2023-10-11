@@ -89,6 +89,8 @@ static void set_state(const bool state);
 static const char *show_state(void);
 /* Set query plan output format: text, json, ... */
 static void set_format(const int format);
+/* Propagate GUC variable value to shared memory (assign hook). */
+static void prop_format_to_shmem(int newval, void *extra);
 static const char *show_format(void);
 /* Check the extension has been properly loaded. */
 static inline void shmem_safety_check(void);
@@ -109,11 +111,6 @@ static void pgsp_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction,
 /* Enables/Disables the extension. */
 Datum pg_show_plans_enable(PG_FUNCTION_ARGS);
 Datum pg_show_plans_disable(PG_FUNCTION_ARGS);
-/* Sets query plan output format. */
-Datum pgsp_format_text(PG_FUNCTION_ARGS);
-Datum pgsp_format_json(PG_FUNCTION_ARGS);
-Datum pgsp_format_yaml(PG_FUNCTION_ARGS);
-Datum pgsp_format_xml(PG_FUNCTION_ARGS);
 /* Show query plans of all the currently running statements. */
 Datum pg_show_plans(PG_FUNCTION_ARGS);
 
@@ -195,9 +192,9 @@ _PG_init(void)
 	                         &plan_format,
 	                         EXPLAIN_FORMAT_TEXT,
 	                         plan_formats,
-	                         PGC_POSTMASTER,
+	                         PGC_USERSET,
 	                         0,
-	                         NULL, NULL, show_format);
+	                         NULL, prop_format_to_shmem, show_format);
 
 	/* Save old hooks, and install new ones. */
 #if PG_VERSION_NUM >= 150000
@@ -346,9 +343,19 @@ show_state()
 static void
 set_format(const int format)
 {
-	shmem_safety_check();
-	if (is_allowed_role())
+	/* Shared memory may not be fully available at server start, so we do not
+	 * check for pgsp_hash availability here. That is why the following line is
+	 * commented out. */
+	/* shmem_safety_check(); */
+
+	if (pgsp != NULL && is_allowed_role())
 		pgsp->plan_format = format;
+}
+
+static void
+prop_format_to_shmem(int newval, void *extra)
+{
+	set_format(newval);
 }
 
 static const char *
@@ -518,34 +525,6 @@ Datum
 pg_show_plans_disable(PG_FUNCTION_ARGS)
 {
 	set_state(false);
-	PG_RETURN_VOID();
-}
-
-Datum
-pgsp_format_text(PG_FUNCTION_ARGS)
-{
-	set_format(EXPLAIN_FORMAT_TEXT);
-	PG_RETURN_VOID();
-}
-
-Datum
-pgsp_format_json(PG_FUNCTION_ARGS)
-{
-	set_format(EXPLAIN_FORMAT_JSON);
-	PG_RETURN_VOID();
-}
-
-Datum
-pgsp_format_yaml(PG_FUNCTION_ARGS)
-{
-	set_format(EXPLAIN_FORMAT_YAML);
-	PG_RETURN_VOID();
-}
-
-Datum
-pgsp_format_xml(PG_FUNCTION_ARGS)
-{
-	set_format(EXPLAIN_FORMAT_XML);
 	PG_RETURN_VOID();
 }
 

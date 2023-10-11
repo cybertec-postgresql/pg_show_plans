@@ -15,8 +15,7 @@ as $$
 $$;
 
 -- text output
+set pg_show_plans.plan_format = 'text';
 show pg_show_plans.plan_format;
 select level, plan from pg_show_plans;
 select * from nest();
-
-set pg_show_plans.plan_format = 'json'; -- fails

@@ -136,7 +136,3 @@ query |
   - `plan`: query plan.
 * `pg_show_plans_disable()`: disable extension.
 * `pg_show_plans_enable()`: enable extension.
-* `pgsp_format_text()`: changes query format to `json`.
-* `pgsp_format_json()`: changes query format to `json`.
-* `pgsp_format_yaml()`: changes query format to `yaml`.
-* `pgsp_format_xml()`: changes query format to `xml`.

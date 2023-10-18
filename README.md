@@ -134,5 +134,3 @@ query |
   - `userid`: user ID who runs the query.
   - `dbid`: database ID the query runs in.
   - `plan`: query plan.
-* `pg_show_plans_disable()`: disable extension.
-* `pg_show_plans_enable()`: enable extension.

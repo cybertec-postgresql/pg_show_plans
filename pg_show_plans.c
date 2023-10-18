@@ -116,10 +116,6 @@ Datum pg_show_plans(PG_FUNCTION_ARGS);
 
 PG_FUNCTION_INFO_V1(pg_show_plans_enable);
 PG_FUNCTION_INFO_V1(pg_show_plans_disable);
-PG_FUNCTION_INFO_V1(pgsp_format_text);
-PG_FUNCTION_INFO_V1(pgsp_format_json);
-PG_FUNCTION_INFO_V1(pgsp_format_yaml);
-PG_FUNCTION_INFO_V1(pgsp_format_xml);
 PG_FUNCTION_INFO_V1(pg_show_plans);
 
 /* Global Variables */

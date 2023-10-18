@@ -1,3 +1,9 @@
+pg-show-plans (2.0.2-1) unstable; urgency=medium
+
+  * New upstream version.
+
+ -- Christoph Berg <myon@debian.org>  Wed, 18 Oct 2023 16:59:09 +0200
+
 pg-show-plans (1.1.5-1) unstable; urgency=medium
 
   * New upstream version.

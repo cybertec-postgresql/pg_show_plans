@@ -114,8 +114,8 @@ query |
 * `pg_show_plans.max_plan_length = 16384`: query plan maximal length in bytes.
   This value affects the amount of shared memory the extension asks for, the
   server may not start if the value is too high.
-* `pg_show_plans.is_enabled = true`: whether the extension is enabled at
-  server start up.
+* `pg_show_plans.is_enabled = true`: enable or disable the extension by
+  assigning to this variable.
 
 *Default values are shown after '=' sign.*
 

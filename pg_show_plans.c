@@ -85,7 +85,7 @@ static void append_query_plan(ExplainState *es);
 /* on_shmem_exit() callback to delete hash entry on client disconnect. */
 static void cleanup(int code, Datum arg);
 /* Set extension state, either enable or disable. */
-static void set_state(const bool state);
+static void set_state(bool state, void *extra);
 static const char *show_state(void);
 /* Set query plan output format: text, json, ... */
 static void set_format(const int format);
@@ -108,14 +108,9 @@ static void pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags);
 static void pgsp_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction,
                              uint64 count, bool execute_once);
 
-/* Enables/Disables the extension. */
-Datum pg_show_plans_enable(PG_FUNCTION_ARGS);
-Datum pg_show_plans_disable(PG_FUNCTION_ARGS);
 /* Show query plans of all the currently running statements. */
 Datum pg_show_plans(PG_FUNCTION_ARGS);
 
-PG_FUNCTION_INFO_V1(pg_show_plans_enable);
-PG_FUNCTION_INFO_V1(pg_show_plans_disable);
 PG_FUNCTION_INFO_V1(pg_show_plans);
 
 /* Global Variables */
@@ -164,9 +159,9 @@ _PG_init(void)
 	                         NULL,
 	                         &start_enabled,
 	                         true,
-	                         PGC_POSTMASTER,
+	                         PGC_USERSET,
 	                         0,
-	                         NULL, NULL, show_state);
+	                         NULL, set_state, show_state);
 	DefineCustomIntVariable("pg_show_plans.max_plan_length",
 	                        gettext_noop("Set the maximum plan length. "
 	                                     "Note that this module allocates (max_plan_length*max_connections) "
@@ -318,10 +313,14 @@ cleanup(int code, Datum arg)
 }
 
 static void
-set_state(const bool state)
+set_state(bool state, void *extra)
 {
-	shmem_safety_check();
-	if (is_allowed_role())
+	/* Shared memory may not be fully available at server start, so we do not
+	 * check for pgsp_hash availability here. That is why the following line is
+	 * commented out. */
+	/* shmem_safety_check(); */
+
+	if (pgsp != NULL && is_allowed_role())
 		pgsp->is_enabled = state;
 }
 
@@ -508,20 +507,6 @@ pgsp_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction,
 		PG_RE_THROW();
 	}
 	PG_END_TRY();
-}
-
-Datum
-pg_show_plans_enable(PG_FUNCTION_ARGS)
-{
-	set_state(true);
-	PG_RETURN_VOID();
-}
-
-Datum
-pg_show_plans_disable(PG_FUNCTION_ARGS)
-{
-	set_state(false);
-	PG_RETURN_VOID();
 }
 
 Datum

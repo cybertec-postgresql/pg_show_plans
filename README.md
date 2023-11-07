@@ -74,10 +74,7 @@ To get query plans and see the corresponding query expression:
 ```
 testdb=# \x
 Expanded display is on.
-testdb=# SELECT p.pid, p.level, p.plan, a.query
-         FROM pg_show_plans p
-         LEFT JOIN pg_stat_activity a
-         ON p.pid = a.pid AND p.level = 0 ORDER BY p.pid, p.level;
+testdb=# SELECT * FROM pg_show_plans_q;
 -[ RECORD 1 ]-----------------------------------------------------------------------------------------
 pid   | 11473
 level | 0
@@ -121,7 +118,9 @@ query |
 
 ## Views
 
-* `pg_show_plans`: defined as `SELECT * FROM pg_show_plans();`.
+* `pg_show_plans`: defined as `SELECT * FROM pg_show_plans();` for convenience.
+* `pg_show_plans_q`: same as `pg_show_plans`, but it has one more column with
+  the corresponding query strings.
 
 ## Functions
 

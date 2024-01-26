@@ -9,6 +9,10 @@ DATA = pg_show_plans--1.0--1.1.sql \
 REGRESS = pg_show_plans formats
 DOCS = pg_show_plans.md
 
+# Fix GCC compilation warning against 16:
+# 	cc1: warning: ‘-Wformat-security’ ignored without ‘-Wformat’ [-Wformat-security]
+PG_CFLAGS = -Wformat
+
 USE_PGXS = 1
 ifdef USE_PGXS
 PG_CONFIG = pg_config
@@ -20,4 +24,3 @@ top_builddir = ../..
 include $(top_builddir)/src/Makefile.global
 include $(top_srcdir)/contrib/contrib-global.mk
 endif
-

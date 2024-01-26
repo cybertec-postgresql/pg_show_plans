@@ -280,24 +280,23 @@ append_query_plan(ExplainState *es)
 
 	offset = 0;
 	for (i = 0; i < nest_level; i++)
-		offset += pgsp_cache->plan_len[i] + 1;
+		offset += pgsp_cache->plan_len[i] + 1; /* +1 for '\0'. */
 	space_left = max_plan_length - offset;
 
 	if (pgsp->plan_format == EXPLAIN_FORMAT_TEXT)
 		new_plan->len--; /* Discard '\n'. */
 
-	if (new_plan->len < space_left) { /* Enough space for a new plan. */
-		memcpy(pgsp_cache->plan + offset,
-		       new_plan->data, new_plan->len);
-		pgsp_cache->plan[offset + new_plan->len] = '\0';
-		pgsp_cache->plan_len[nest_level] = new_plan->len;
-	} else { /* No space left to hold a new plan, snip it. */
-		memcpy(pgsp_cache->plan + offset,
-		       new_plan->data, space_left);
-		pgsp_cache->plan[max_plan_length-1] = '\0';
-		pgsp_cache->plan[max_plan_length-2] = '|'; /* Snip indicator. */
-		pgsp_cache->plan_len[nest_level] = space_left;
+	if (space_left < new_plan->len+1) {
+		ereport(WARNING,
+		        errcode(ERRCODE_OUT_OF_MEMORY),
+		        errmsg("not enough memory to append new query plans"));
+		return;
 	}
+
+	memcpy(pgsp_cache->plan + offset,
+		   new_plan->data, new_plan->len);
+	pgsp_cache->plan[offset + new_plan->len] = '\0';
+	pgsp_cache->plan_len[nest_level] = new_plan->len;
 	pgsp_cache->db_id = MyDatabaseId;
 	pgsp_cache->n_plans = nest_level+1;
 }

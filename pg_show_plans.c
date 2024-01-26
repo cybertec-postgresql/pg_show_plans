@@ -61,9 +61,9 @@ typedef struct pgspSharedState /* Shared state of the extension. */
 
 typedef struct pgspCtx { /* Used as `funcctx->user_fctx` in pg_show_plans(). */
 	HASH_SEQ_STATUS *hash_seq;
-	pgspEntry       *pgvp_tmp_entry; /* PGVP entry currently processing. */
+	pgspEntry       *pgsp_tmp_entry; /* PGSP entry currently processing. */
 	int              curr_nest; /* Current nest level porcessing. */
-	bool             is_done; /* Done processing current PGVP entry? */
+	bool             is_done; /* Done processing current PGSP entry? */
 } pgspCtx;
 
 /* Function Prototypes */
@@ -99,7 +99,7 @@ static bool is_allowed_role(void);
 /* Hook functions. */
 /* Ask for shared memory. */
 #if PG_VERSION_NUM >= 150000
-static void pgvp_shmem_request(void);
+static void pgsp_shmem_request(void);
 #endif
 static void pgsp_shmem_startup(void);
 /* Saves query plans to the shared hash table. */
@@ -190,7 +190,7 @@ _PG_init(void)
 	/* Save old hooks, and install new ones. */
 #if PG_VERSION_NUM >= 150000
 	prev_shmem_request_hook = shmem_request_hook;
-	shmem_request_hook = pgvp_shmem_request;
+	shmem_request_hook = pgsp_shmem_request;
 #else
 	RequestAddinShmemSpace(shmem_required());
 	RequestNamedLWLockTranche("pg_show_plans", 1);
@@ -239,13 +239,13 @@ compare_hash_key(const void *key1, const void *key2, Size keysize)
 static int
 ensure_cached(void)
 {
-	pgspHashKey pgvp_hash_hey;
+	pgspHashKey pgsp_hash_hey;
 
 	if (pgsp_cache)
 		return 1;
 
-	pgvp_hash_hey.pid = MyProcPid;
-	pgsp_cache = create_hash_entry(&pgvp_hash_hey);
+	pgsp_hash_hey.pid = MyProcPid;
+	pgsp_cache = create_hash_entry(&pgsp_hash_hey);
 	if (!pgsp_cache)
 		return 0; /* Ran out of memory. */
 
@@ -395,7 +395,7 @@ is_allowed_role(void)
 
 #if PG_VERSION_NUM >= 150000
 static void
-pgvp_shmem_request(void)
+pgsp_shmem_request(void)
 {
 	if (prev_shmem_request_hook)
 		prev_shmem_request_hook();
@@ -519,9 +519,9 @@ pg_show_plans(PG_FUNCTION_ARGS)
 	int              offset;
 	int              i;
 
-	pgspCtx         *pgvp_ctx;
+	pgspCtx         *pgsp_ctx;
 	HASH_SEQ_STATUS *hash_seq;
-	pgspEntry       *pgvp_tmp_entry;
+	pgspEntry       *pgsp_tmp_entry;
 	int              curr_nest;
 	bool             is_done;
 
@@ -534,12 +534,12 @@ pg_show_plans(PG_FUNCTION_ARGS)
 		oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);
 
 		LWLockAcquire(pgsp->lock, LW_SHARED);
-		pgvp_ctx = (pgspCtx *)palloc(sizeof(pgspCtx));
-		pgvp_ctx->is_done = true;
-		pgvp_ctx->curr_nest = 0;
-		pgvp_ctx->hash_seq = (HASH_SEQ_STATUS *)palloc(sizeof(HASH_SEQ_STATUS));
-		hash_seq_init(pgvp_ctx->hash_seq, pgsp_hash);
-		funcctx->user_fctx = (void *)pgvp_ctx;
+		pgsp_ctx = (pgspCtx *)palloc(sizeof(pgspCtx));
+		pgsp_ctx->is_done = true;
+		pgsp_ctx->curr_nest = 0;
+		pgsp_ctx->hash_seq = (HASH_SEQ_STATUS *)palloc(sizeof(HASH_SEQ_STATUS));
+		hash_seq_init(pgsp_ctx->hash_seq, pgsp_hash);
+		funcctx->user_fctx = (void *)pgsp_ctx;
 		funcctx->max_calls = hash_get_num_entries(pgsp_hash);
 
 		if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
@@ -554,11 +554,11 @@ pg_show_plans(PG_FUNCTION_ARGS)
 
 	funcctx = SRF_PERCALL_SETUP();
 	/* Restore context. */
-	pgvp_ctx = (pgspCtx *)funcctx->user_fctx;
-	hash_seq = pgvp_ctx->hash_seq;
-	is_done = pgvp_ctx->is_done;
-	pgvp_tmp_entry = pgvp_ctx->pgvp_tmp_entry;
-	curr_nest = pgvp_ctx->curr_nest;
+	pgsp_ctx = (pgspCtx *)funcctx->user_fctx;
+	hash_seq = pgsp_ctx->hash_seq;
+	is_done = pgsp_ctx->is_done;
+	pgsp_tmp_entry = pgsp_ctx->pgsp_tmp_entry;
+	curr_nest = pgsp_ctx->curr_nest;
 	/* Pull other stuff from `funcctx`. */
 	call_cntr = funcctx->call_cntr;
 	max_calls = funcctx->max_calls;
@@ -570,14 +570,14 @@ pg_show_plans(PG_FUNCTION_ARGS)
 
 		if (is_done) /* Done processing a hash entry? */
 		{ /* Grab a new one. */
-			pgvp_tmp_entry = hash_seq_search(hash_seq);
+			pgsp_tmp_entry = hash_seq_search(hash_seq);
 			/* Skip empty entries and the ones the user is not
 			 * allowed to see. */
 			for (;;) {
-				if (pgvp_tmp_entry->n_plans >= 1) {
+				if (pgsp_tmp_entry->n_plans >= 1) {
 					if (is_allowed_role())
 						break;
-					else if (pgvp_tmp_entry->user_id == GetUserId())
+					else if (pgsp_tmp_entry->user_id == GetUserId())
 						break;
 				}
 				if (call_cntr == max_calls-1) { /* No more entries. */
@@ -585,27 +585,27 @@ pg_show_plans(PG_FUNCTION_ARGS)
 					LWLockRelease(pgsp->lock);
 					SRF_RETURN_DONE(funcctx);
 				}
-				pgvp_tmp_entry = hash_seq_search(hash_seq);
+				pgsp_tmp_entry = hash_seq_search(hash_seq);
 				call_cntr++;
 			}
-			SpinLockAcquire(&pgvp_tmp_entry->mutex);
+			SpinLockAcquire(&pgsp_tmp_entry->mutex);
 		}
 
 		/* A single hash entry may store multiple (nested) plans, so
 		 * count offset to get the desired plan. */
 		offset = 0;
 		for (i = 0; i < curr_nest; i++)
-			offset += pgvp_tmp_entry->plan_len[i] + 1;
+			offset += pgsp_tmp_entry->plan_len[i] + 1;
 
 		MemSet(nulls, 0, sizeof(nulls));
-		values[0] = Int32GetDatum(pgvp_tmp_entry->hash_key.pid);
+		values[0] = Int32GetDatum(pgsp_tmp_entry->hash_key.pid);
 		values[1] = Int32GetDatum(curr_nest);
-		values[2] = ObjectIdGetDatum(pgvp_tmp_entry->user_id);
-		values[3] = ObjectIdGetDatum(pgvp_tmp_entry->db_id);
-		values[4] = CStringGetTextDatum(pgvp_tmp_entry->plan + offset);
+		values[2] = ObjectIdGetDatum(pgsp_tmp_entry->user_id);
+		values[3] = ObjectIdGetDatum(pgsp_tmp_entry->db_id);
+		values[4] = CStringGetTextDatum(pgsp_tmp_entry->plan + offset);
 		htup = heap_form_tuple(funcctx->tuple_desc, values, nulls);
 
-		if (curr_nest < pgvp_tmp_entry->n_plans-1)
+		if (curr_nest < pgsp_tmp_entry->n_plans-1)
 		{ /* Still have nested plans. */
 			curr_nest++;
 			call_cntr--; /* May not be legal, but it works. */
@@ -613,12 +613,12 @@ pg_show_plans(PG_FUNCTION_ARGS)
 		} else { /* No more nested plans, get a new entry. */
 			curr_nest = 0;
 			is_done = true;
-			SpinLockRelease(&pgvp_tmp_entry->mutex);
+			SpinLockRelease(&pgsp_tmp_entry->mutex);
 		}
 		/* Save values back to the context. */
-		pgvp_ctx->is_done = is_done;
-		pgvp_ctx->curr_nest = curr_nest;
-		pgvp_ctx->pgvp_tmp_entry = pgvp_tmp_entry;
+		pgsp_ctx->is_done = is_done;
+		pgsp_ctx->curr_nest = curr_nest;
+		pgsp_ctx->pgsp_tmp_entry = pgsp_tmp_entry;
 		funcctx->call_cntr = call_cntr;
 
 		SRF_RETURN_NEXT(funcctx, HeapTupleGetDatum(htup));

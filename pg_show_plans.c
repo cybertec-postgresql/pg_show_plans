@@ -464,7 +464,6 @@ pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags)
 
 	es = NewExplainState();
 	es->format = pgsp->plan_format;
-	es->costs = false;
 	ExplainBeginOutput(es);
 	ExplainPrintPlan(es, queryDesc);
 	ExplainEndOutput(es);

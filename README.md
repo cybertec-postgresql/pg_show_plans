@@ -102,6 +102,25 @@ query |
 
 ```
 
+# BENCHMARKS
+
+`pgbench -c 10 -j 3 -t 5000 -S` plain PostgreSQL `16.1`:
+
+```
+tps = 193655.084802 (without initial connection time)
+tps = 200890.346014 (without initial connection time)
+tps = 199931.223659 (without initial connection time)
+```
+
+`pgbench -c 10 -j 3 -t 5000 -S` PostgreSQL `16.1` with `pg_show_plans` version
+2.1.0:
+
+```
+tps = 166564.507102 (without initial connection time)
+tps = 172814.245424 (without initial connection time)
+tps = 174658.455390 (without initial connection time)
+```
+
 # REFERENCE
 
 ## GUC Variables

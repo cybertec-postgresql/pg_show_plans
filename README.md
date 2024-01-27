@@ -1,7 +1,7 @@
 # pg_show_plans
 
 PostgreSQL extension that shows query plans of all the currently running SQL
-statements. Query plans can be shown in several formats, like `JSON`.
+statements. Query plans can be shown in several formats, like `JSON` or `YAML`.
 
 *This extension creates a hash table within shared memory. The hash table is
 not resizable, thus, no new plans can be added once it has been filled up.*

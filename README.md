@@ -113,7 +113,7 @@ tps = 199931.223659 (without initial connection time)
 ```
 
 `pgbench -c 10 -j 3 -t 5000 -S` PostgreSQL `16.1` with `pg_show_plans` version
-2.1.0:
+`2.1.0`:
 
 ```
 tps = 166564.507102 (without initial connection time)

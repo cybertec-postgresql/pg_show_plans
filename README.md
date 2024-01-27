@@ -121,6 +121,8 @@ tps = 172814.245424 (without initial connection time)
 tps = 174658.455390 (without initial connection time)
 ```
 
+In overall approximately 15% performance penalty.
+
 # REFERENCE
 
 ## GUC Variables

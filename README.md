@@ -8,10 +8,7 @@ not resizable, thus, no new plans can be added once it has been filled up.*
 
 # INSTALL
 
-Either use PGXS infrastructure (recommended), or compile within the source
-tree. PostgreSQL versions 12 and newer are supported.
-
-## PGXS
+PostgreSQL versions 12 and newer are supported.
 
 Install PostgreSQL before proceeding. Make sure to have `pg_config` binary,
 these are typically included in `-dev` and `-devel` packages.
@@ -21,22 +18,6 @@ git clone https://github.com/cybertec-postgresql/pg_show_plans.git
 cd pg_show_plans
 make
 make install
-```
-
-## Within Source Tree
-
-```bash
-PG_VER='15.3' # Set the required PostgreSQL version.
-curl -O "https://download.postgresql.org/pub/source/v${PG_VER}/postgresql-${PG_VER}.tar.bz2"
-tar xvfj "postgresql-${PG_VER}.tar.bz2"
-cd postgresql-${PG_VER}
-./configure
-
-cd contrib
-git clone https://github.com/cybertec-postgresql/pg_show_plans.git
-cd pg_show_plans
-make USE_PGXS=
-make USE_PGXS= install
 ```
 
 ## Configure

@@ -319,7 +319,7 @@ set_state(bool state, void *extra)
 	 * commented out. */
 	/* shmem_safety_check(); */
 
-	if (pgsp != NULL && is_allowed_role())
+	if (pgsp != NULL)
 		pgsp->is_enabled = state;
 }
 

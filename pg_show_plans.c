@@ -289,7 +289,8 @@ append_query_plan(ExplainState *es)
 	if (space_left < new_plan->len+1) {
 		ereport(WARNING,
 		        errcode(ERRCODE_OUT_OF_MEMORY),
-		        errmsg("not enough memory to append new query plans"));
+		        errmsg("not enough memory to append new query plans"),
+		        errhint("Try increasing 'pg_show_plans.max_plan_length'."));
 		return;
 	}
 
@@ -364,7 +365,10 @@ show_format()
 	else if (pgsp->plan_format == EXPLAIN_FORMAT_XML)
 		return "xml";
 	else
-		elog(ERROR, "unexpected plan_format value: %d", pgsp->plan_format);
+		ereport(ERROR,
+		        errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+		        errmsg("unexpected plan_format value: %d", pgsp->plan_format),
+		        errhint("Valid values are 'text', 'json', 'yaml', 'xml'."));
 }
 
 static inline void
@@ -374,9 +378,10 @@ shmem_safety_check(void)
 		return;
 
 	ereport(ERROR,
-	        (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-	         errmsg("pg_show_plans must be loaded"
-	                " via shared_preload_libraries")));
+	        errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+	        errmsg("shared library not found"),
+	        errhint("Add 'pg_show_plans' to 'shared_preload_libraries', "
+	                "and restart the server."));
 }
 
 static bool
@@ -455,7 +460,8 @@ pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags)
 	if (!ensure_cached()) {
 		ereport(WARNING,
 		        errcode(ERRCODE_OUT_OF_MEMORY),
-		        errmsg("not enough memory to store new query plans"));
+		        errmsg("not enough memory to append new query plans"),
+		        errhint("Try increasing 'pg_show_plans.max_plan_length'."));
 		return;
 	}
 
@@ -543,9 +549,9 @@ pg_show_plans(PG_FUNCTION_ARGS)
 
 		if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
 			ereport(ERROR,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("function returning record called in context "
-				        "that cannot accept type record") ));
+			        errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+			        errmsg("function returning record called in context "
+			               "that cannot accept type record"));
 		funcctx->tuple_desc = BlessTupleDesc(tupdesc);
 
 		MemoryContextSwitchTo(oldcontext);

@@ -1,2 +1,0 @@
-version=4
-https://github.com/cybertec-postgresql/pg_show_plans/tags .*/v(.*).tar.gz

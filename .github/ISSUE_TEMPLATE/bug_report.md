@@ -12,6 +12,7 @@ assignees: ''
 Describe the issue and do not forget to attach the following info to get help quicker:
 
 * PostgreSQL version
+* Extension version
 * Which way did you install PostgreSQL, sources or binaries?
 * Operating system
 * All the other extensions that you use.

@@ -159,7 +159,11 @@ _PG_init(void)
 	                         NULL,
 	                         &start_enabled,
 	                         true,
+#if PG_VERSION_NUM >= 150000
 	                         PGC_USERSET,
+#else
+	                         PGC_POSTMASTER,
+#endif
 	                         0,
 	                         NULL, set_state, show_state);
 	DefineCustomIntVariable("pg_show_plans.max_plan_length",
@@ -183,7 +187,11 @@ _PG_init(void)
 	                         &plan_format,
 	                         EXPLAIN_FORMAT_TEXT,
 	                         plan_formats,
+#if PG_VERSION_NUM >= 150000
 	                         PGC_USERSET,
+#else
+	                         PGC_POSTMASTER,
+#endif
 	                         0,
 	                         NULL, prop_format_to_shmem, show_format);
 

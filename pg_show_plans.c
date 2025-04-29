@@ -15,6 +15,10 @@
 
 #include "catalog/pg_authid.h"
 #include "commands/explain.h"
+#if PG_VERSION_NUM >= 180000
+#include "commands/explain_state.h"
+#include "commands/explain_format.h"
+#endif
 #include "fmgr.h"
 #include "funcapi.h"
 #include "lib/stringinfo.h"
@@ -103,10 +107,20 @@ static void pgsp_shmem_request(void);
 #endif
 static void pgsp_shmem_startup(void);
 /* Saves query plans to the shared hash table. */
-static void pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags);
+static
+#if PG_VERSION_NUM < 180000
+void
+#else
+bool
+#endif
+pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags);
 /* Keeps track of the nest level. */
 static void pgsp_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction,
-                             uint64 count, bool execute_once);
+                             uint64 count
+#if PG_VERSION_NUM < 180000
+							 , bool execute_once
+#endif
+							);
 
 /* Show query plans of all the currently running statements. */
 Datum pg_show_plans(PG_FUNCTION_ARGS);
@@ -455,26 +469,54 @@ pgsp_shmem_startup(void)
 	LWLockRelease(AddinShmemInitLock);
 }
 
-static void
+static
+#if PG_VERSION_NUM < 180000
+void
+#else
+bool
+#endif
 pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags)
 {
 	ExplainState *es;
+#if PG_VERSION_NUM >= 180000
+	bool ret_val;
+#endif
 
 	if (prev_ExecutorStart)
+	{
+#if PG_VERSION_NUM >= 180000
+		ret_val =
+#endif
 		prev_ExecutorStart(queryDesc, eflags);
+	}
 	else
+	{
+#if PG_VERSION_NUM >= 180000
+		ret_val =
+#endif
 		standard_ExecutorStart(queryDesc, eflags);
+	}
 
 	if (!ensure_cached()) {
 		ereport(WARNING,
 		        errcode(ERRCODE_OUT_OF_MEMORY),
 		        errmsg("not enough memory to append new query plans"),
 		        errhint("Try increasing 'pg_show_plans.max_plan_length'."));
-		return;
+		return
+#if PG_VERSION_NUM >= 180000
+			ret_val
+#endif
+			;
 	}
 
 	if (!pgsp->is_enabled)
-		return;
+	{
+		return
+#if PG_VERSION_NUM >= 180000
+			ret_val
+#endif
+			;
+	}
 
 	es = NewExplainState();
 	es->format = pgsp->plan_format;
@@ -484,20 +526,39 @@ pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags)
 
 	append_query_plan(es);
 	pfree(es->str->data);
+
+	return
+#if PG_VERSION_NUM >= 180000
+		ret_val
+#endif
+		;
 }
 
 static void
 pgsp_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction,
-                 uint64 count, bool execute_once)
+                 uint64 count
+#if PG_VERSION_NUM < 180000
+				 , bool execute_once
+#endif
+				)
 {
 	nest_level++;
 	PG_TRY();
 	{
 		/* These functions return *after* the nested quries do. */
 		if (prev_ExecutorRun)
-			prev_ExecutorRun(queryDesc, direction, count, execute_once);
+			prev_ExecutorRun(queryDesc, direction, count
+#if PG_VERSION_NUM < 180000
+					, execute_once);
+#else
+		);
+#endif
 		else
-			standard_ExecutorRun(queryDesc, direction, count, execute_once);
+			standard_ExecutorRun(queryDesc, direction, count
+#if PG_VERSION_NUM < 180000
+					, execute_once
+#endif
+					);
 
 		nest_level--;
 		/* Wait for reading to complete, then delete. */

@@ -2,7 +2,7 @@
 select setting::int < 140000 as pg12_13 from pg_settings where name = 'server_version_num';
  pg12_13 
 ---------
- t
+ f
 (1 row)
 
 -- json output
@@ -20,24 +20,28 @@ select * from nest();
        |   "Plan": {                          +
        |     "Node Type": "Function Scan",    +
        |     "Parallel Aware": false,         +
+       |     "Async Capable": false,          +
        |     "Function Name": "nest",         +
        |     "Alias": "nest",                 +
        |     "Startup Cost": 0.25,            +
        |     "Total Cost": 10.25,             +
        |     "Plan Rows": 1000,               +
-       |     "Plan Width": 36                 +
+       |     "Plan Width": 36,                +
+       |     "Disabled": false                +
        |   }                                  +
        | ]
      1 | [                                    +
        |   "Plan": {                          +
        |     "Node Type": "Function Scan",    +
        |     "Parallel Aware": false,         +
+       |     "Async Capable": false,          +
        |     "Function Name": "pg_show_plans",+
        |     "Alias": "pg_show_plans",        +
        |     "Startup Cost": 0.00,            +
        |     "Total Cost": 12.50,             +
        |     "Plan Rows": 333,                +
        |     "Plan Width": 36,                +
+       |     "Disabled": false,               +
        |     "Filter": "(level >= 0)"         +
        |   }                                  +
        | ]
@@ -57,21 +61,25 @@ select * from nest();
      0 | Plan:                           +
        |   Node Type: "Function Scan"    +
        |   Parallel Aware: false         +
+       |   Async Capable: false          +
        |   Function Name: "nest"         +
        |   Alias: "nest"                 +
        |   Startup Cost: 0.25            +
        |   Total Cost: 10.25             +
        |   Plan Rows: 1000               +
-       |   Plan Width: 36
+       |   Plan Width: 36                +
+       |   Disabled: false
      1 | Plan:                           +
        |   Node Type: "Function Scan"    +
        |   Parallel Aware: false         +
+       |   Async Capable: false          +
        |   Function Name: "pg_show_plans"+
        |   Alias: "pg_show_plans"        +
        |   Startup Cost: 0.00            +
        |   Total Cost: 12.50             +
        |   Plan Rows: 333                +
        |   Plan Width: 36                +
+       |   Disabled: false               +
        |   Filter: "(level >= 0)"
 (2 rows)
 
@@ -90,24 +98,28 @@ select * from nest();
        |   <Plan>                                                +
        |     <Node-Type>Function Scan</Node-Type>                +
        |     <Parallel-Aware>false</Parallel-Aware>              +
+       |     <Async-Capable>false</Async-Capable>                +
        |     <Function-Name>nest</Function-Name>                 +
        |     <Alias>nest</Alias>                                 +
        |     <Startup-Cost>0.25</Startup-Cost>                   +
        |     <Total-Cost>10.25</Total-Cost>                      +
        |     <Plan-Rows>1000</Plan-Rows>                         +
        |     <Plan-Width>36</Plan-Width>                         +
+       |     <Disabled>false</Disabled>                          +
        |   </Plan>                                               +
        | </explain>
      1 | <explain xmlns="http://www.postgresql.org/2009/explain">+
        |   <Plan>                                                +
        |     <Node-Type>Function Scan</Node-Type>                +
        |     <Parallel-Aware>false</Parallel-Aware>              +
+       |     <Async-Capable>false</Async-Capable>                +
        |     <Function-Name>pg_show_plans</Function-Name>        +
        |     <Alias>pg_show_plans</Alias>                        +
        |     <Startup-Cost>0.00</Startup-Cost>                   +
        |     <Total-Cost>12.50</Total-Cost>                      +
        |     <Plan-Rows>333</Plan-Rows>                          +
        |     <Plan-Width>36</Plan-Width>                         +
+       |     <Disabled>false</Disabled>                          +
        |     <Filter>(level &gt;= 0)</Filter>                    +
        |   </Plan>                                               +
        | </explain>

@@ -502,11 +502,21 @@ pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags)
 		        errcode(ERRCODE_OUT_OF_MEMORY),
 		        errmsg("not enough memory to append new query plans"),
 		        errhint("Try increasing 'pg_show_plans.max_plan_length'."));
-		return ret_val;
+		return
+#if PG_VERSION_NUM >= 180000
+			ret_val
+#endif
+			;
 	}
 
 	if (!pgsp->is_enabled)
-		return ret_val;
+	{
+		return
+#if PG_VERSION_NUM >= 180000
+			ret_val
+#endif
+			;
+	}
 
 	es = NewExplainState();
 	es->format = pgsp->plan_format;
@@ -517,7 +527,11 @@ pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags)
 	append_query_plan(es);
 	pfree(es->str->data);
 
-	return ret_val;
+	return
+#if PG_VERSION_NUM >= 180000
+		ret_val
+#endif
+		;
 }
 
 static void

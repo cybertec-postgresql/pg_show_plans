@@ -1,0 +1,66 @@
+-- explain output on PG12/13 is missing "Async Capable"
+select setting::int < 140000 as pg12_13 from pg_settings where name = 'server_version_num';
+ pg12_13 
+---------
+ f
+(1 row)
+
+-- json output
+set pg_show_plans.plan_format = 'json';
+ERROR:  parameter "pg_show_plans.plan_format" cannot be changed without restarting the server
+show pg_show_plans.plan_format;
+ pg_show_plans.plan_format 
+---------------------------
+ text
+(1 row)
+
+select * from nest();
+ level |                                 plan                                 
+-------+----------------------------------------------------------------------
+     0 | Function Scan on nest  (cost=0.25..10.25 rows=1000 width=36)
+     1 | Function Scan on pg_show_plans  (cost=0.00..12.50 rows=333 width=36)+
+       |   Filter: (level >= 0)
+(2 rows)
+
+-- yaml output
+set pg_show_plans.plan_format = 'yaml';
+ERROR:  parameter "pg_show_plans.plan_format" cannot be changed without restarting the server
+show pg_show_plans.plan_format;
+ pg_show_plans.plan_format 
+---------------------------
+ text
+(1 row)
+
+select * from nest();
+ level |                                 plan                                 
+-------+----------------------------------------------------------------------
+     0 | Function Scan on nest  (cost=0.25..10.25 rows=1000 width=36)
+     1 | Function Scan on pg_show_plans  (cost=0.00..12.50 rows=333 width=36)+
+       |   Filter: (level >= 0)
+(2 rows)
+
+-- xml output
+set pg_show_plans.plan_format = 'xml';
+ERROR:  parameter "pg_show_plans.plan_format" cannot be changed without restarting the server
+show pg_show_plans.plan_format;
+ pg_show_plans.plan_format 
+---------------------------
+ text
+(1 row)
+
+select * from nest();
+ level |                                 plan                                 
+-------+----------------------------------------------------------------------
+     0 | Function Scan on nest  (cost=0.25..10.25 rows=1000 width=36)
+     1 | Function Scan on pg_show_plans  (cost=0.00..12.50 rows=333 width=36)+
+       |   Filter: (level >= 0)
+(2 rows)
+
+-- check plan format after reconnect
+\c
+show pg_show_plans.plan_format;
+ pg_show_plans.plan_format 
+---------------------------
+ text
+(1 row)
+

@@ -8,7 +8,7 @@ not resizable, thus, no new plans can be added once it has been filled up.*
 
 # INSTALL
 
-PostgreSQL versions 12 and newer are supported.
+PostgreSQL versions 14 and newer are supported.
 
 Install PostgreSQL before proceeding. Make sure to have `pg_config` binary,
 these are typically included in `-dev` and `-devel` packages.

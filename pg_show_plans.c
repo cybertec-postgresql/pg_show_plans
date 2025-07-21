@@ -68,6 +68,7 @@ typedef struct pgspCtx { /* Used as `funcctx->user_fctx` in pg_show_plans(). */
 	pgspEntry       *pgsp_tmp_entry; /* PGSP entry currently processing. */
 	int              curr_nest; /* Current nest level porcessing. */
 	bool             is_done; /* Done processing current PGSP entry? */
+	int				 n_plans;
 } pgspCtx;
 
 /* Function Prototypes */
@@ -579,6 +580,7 @@ pg_show_plans(PG_FUNCTION_ARGS)
 		pgsp_ctx = (pgspCtx *)palloc(sizeof(pgspCtx));
 		pgsp_ctx->is_done = true;
 		pgsp_ctx->curr_nest = 0;
+		pgsp_ctx->n_plans = 0;
 		pgsp_ctx->hash_seq = (HASH_SEQ_STATUS *)palloc(sizeof(HASH_SEQ_STATUS));
 		hash_seq_init(pgsp_ctx->hash_seq, pgsp_hash);
 		funcctx->user_fctx = (void *)pgsp_ctx;
@@ -631,6 +633,8 @@ pg_show_plans(PG_FUNCTION_ARGS)
 				call_cntr++;
 			}
 			SpinLockAcquire(&pgsp_tmp_entry->mutex);
+			pgsp_ctx->n_plans = pgsp_tmp_entry->n_plans;
+			SpinLockRelease(&pgsp_tmp_entry->mutex);
 		}
 
 		/* A single hash entry may store multiple (nested) plans, so
@@ -647,7 +651,7 @@ pg_show_plans(PG_FUNCTION_ARGS)
 		values[4] = CStringGetTextDatum(pgsp_tmp_entry->plan + offset);
 		htup = heap_form_tuple(funcctx->tuple_desc, values, nulls);
 
-		if (curr_nest < pgsp_tmp_entry->n_plans-1)
+		if (curr_nest < pgsp_ctx->n_plans - 1)
 		{ /* Still have nested plans. */
 			curr_nest++;
 			call_cntr--; /* May not be legal, but it works. */
@@ -655,7 +659,7 @@ pg_show_plans(PG_FUNCTION_ARGS)
 		} else { /* No more nested plans, get a new entry. */
 			curr_nest = 0;
 			is_done = true;
-			SpinLockRelease(&pgsp_tmp_entry->mutex);
+			pgsp_ctx->n_plans = 0;
 		}
 		/* Save values back to the context. */
 		pgsp_ctx->is_done = is_done;

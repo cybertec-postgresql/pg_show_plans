@@ -107,13 +107,7 @@ static void pgsp_shmem_request(void);
 #endif
 static void pgsp_shmem_startup(void);
 /* Saves query plans to the shared hash table. */
-static
-#if PG_VERSION_NUM < 180000
-void
-#else
-bool
-#endif
-pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags);
+static void pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags);
 /* Keeps track of the nest level. */
 static void pgsp_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction,
                              uint64 count
@@ -469,31 +463,17 @@ pgsp_shmem_startup(void)
 	LWLockRelease(AddinShmemInitLock);
 }
 
-static
-#if PG_VERSION_NUM < 180000
-void
-#else
-bool
-#endif
+static void
 pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags)
 {
 	ExplainState *es;
-#if PG_VERSION_NUM >= 180000
-	bool ret_val;
-#endif
 
 	if (prev_ExecutorStart)
 	{
-#if PG_VERSION_NUM >= 180000
-		ret_val =
-#endif
 		prev_ExecutorStart(queryDesc, eflags);
 	}
 	else
 	{
-#if PG_VERSION_NUM >= 180000
-		ret_val =
-#endif
 		standard_ExecutorStart(queryDesc, eflags);
 	}
 
@@ -502,20 +482,12 @@ pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags)
 		        errcode(ERRCODE_OUT_OF_MEMORY),
 		        errmsg("not enough memory to append new query plans"),
 		        errhint("Try increasing 'pg_show_plans.max_plan_length'."));
-		return
-#if PG_VERSION_NUM >= 180000
-			ret_val
-#endif
-			;
+		return;
 	}
 
 	if (!pgsp->is_enabled)
 	{
-		return
-#if PG_VERSION_NUM >= 180000
-			ret_val
-#endif
-			;
+		return;
 	}
 
 	es = NewExplainState();
@@ -527,11 +499,7 @@ pgsp_ExecutorStart(QueryDesc *queryDesc, int eflags)
 	append_query_plan(es);
 	pfree(es->str->data);
 
-	return
-#if PG_VERSION_NUM >= 180000
-		ret_val
-#endif
-		;
+	return;
 }
 
 static void

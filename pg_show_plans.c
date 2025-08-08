@@ -344,7 +344,7 @@ set_state(bool state, void *extra)
 /* since we can't update start_enabled in running backends, provide a show hook
  * that reads the value from shared memory */
 static const char *
-show_state()
+show_state(void)
 {
 	if (pgsp->is_enabled)
 		return "on";

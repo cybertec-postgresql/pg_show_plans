@@ -33,7 +33,7 @@
 /* Constants and Macros */
 PG_MODULE_MAGIC;
 
-#if PG_VERSION_NUM < 120000
+#if PG_VERSION_NUM < 140000
 #error "Unsupported PostgreSQL Version"
 #endif
 
@@ -405,11 +405,7 @@ static bool
 is_allowed_role(void)
 {
 	bool is_allowed_role = false;
-#if PG_VERSION_NUM >= 140000
 	is_allowed_role = is_member_of_role(GetUserId(), ROLE_PG_READ_ALL_STATS);
-#else
-	is_allowed_role = is_member_of_role(GetUserId(), DEFAULT_ROLE_READ_ALL_STATS);
-#endif
 	return is_allowed_role;
 
 }

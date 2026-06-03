@@ -13,6 +13,7 @@
 /* Includes */
 #include "postgres.h"
 
+#include "access/htup_details.h"
 #include "catalog/pg_authid.h"
 #include "commands/explain.h"
 #if PG_VERSION_NUM >= 180000
@@ -25,7 +26,9 @@
 #include "miscadmin.h"
 #include "storage/ipc.h"
 #include "storage/lwlock.h"
+#include "storage/s_lock.h"
 #include "storage/shmem.h"
+#include "storage/spin.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/guc.h"
@@ -453,7 +456,9 @@ pgsp_shmem_startup(void)
 	info.match = compare_hash_key;
 	pgsp_hash = ShmemInitHash("pg_show_plans hash",
 	                          MaxConnections,
+#if PG_VERSION_NUM < 190000
 	                          MaxConnections,
+#endif
 	                          &info,
 	                          HASH_ELEM|HASH_FUNCTION|HASH_COMPARE);
 
